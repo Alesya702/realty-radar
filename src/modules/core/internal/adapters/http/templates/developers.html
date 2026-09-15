@@ -1,0 +1,19 @@
+{{define "content"}}
+<h1>Девелоперы</h1>
+<div class="card">
+  {{if .Data.Developers}}
+  <table>
+    <thead><tr><th>Название</th><th>Создан</th></tr></thead>
+    <tbody>{{range .Data.Developers}}<tr><td>{{.Name}}</td><td>{{datetime .CreatedAt}}</td></tr>{{end}}</tbody>
+  </table>
+  {{else}}<p class="muted">Девелоперов пока нет.</p>{{end}}
+</div>
+<div class="card">
+  <h2>Новый девелопер</h2>
+  <form class="inline" method="post" action="/developers">
+    <label>Название*<input name="name" required maxlength="300" value="{{.Data.Form.Value "developer" "name" ""}}"></label>
+    <button type="submit">Добавить</button>
+  </form>
+  <p class="hint">Уровень «девелопера» (бренд, группа компаний или юрлицо-застройщик) пока не определён — Q-CORE-21.</p>
+</div>
+{{end}}

@@ -1,0 +1,25 @@
+{{define "content"}}
+{{$form := .Data.Form}}
+<h1>Источники данных</h1>
+<p class="muted">Источник — идентичность происхождения сведений (ручной ввод, канал документов). Логики конкретных
+  источников в Core нет.</p>
+<div class="card">
+  <table>
+    <thead><tr><th>Код</th><th>Название</th><th>Вид</th><th>Активен</th></tr></thead>
+    <tbody>{{range .Data.Sources}}
+      <tr><td><code>{{.Code}}</code></td><td>{{.Name}}</td><td>{{sourceKind .Kind}}</td><td>{{if .IsActive}}да{{else}}нет{{end}}</td></tr>
+    {{end}}</tbody>
+  </table>
+</div>
+<div class="card">
+  <h2>Новый источник</h2>
+  <form class="grid" method="post" action="/data-sources">
+    <label>Код* (латиница, цифры, _ и -)<input name="code" required pattern="[a-z0-9][a-z0-9_\-]{1,62}" value="{{$form.Value "source" "code" ""}}"></label>
+    <label>Название*<input name="name" required maxlength="300" value="{{$form.Value "source" "name" ""}}"></label>
+    <label>Вид
+      <select name="kind">{{range .Data.Kinds}}<option value="{{.}}" {{if eq ($form.Value "source" "kind" "") (print .)}}selected{{end}}>{{sourceKind .}}</option>{{end}}</select>
+    </label>
+    <div><button type="submit">Добавить</button></div>
+  </form>
+</div>
+{{end}}

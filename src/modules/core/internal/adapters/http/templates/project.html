@@ -1,0 +1,175 @@
+{{define "content"}}
+{{$d := .Data}}
+{{$form := .Data.Form}}
+<p><a href="/projects">← Проекты</a></p>
+<h1>{{$d.Project.Name}}
+  {{if $d.InPortfolio}}<span class="badge own">Проект компании (портфель)</span>{{else}}<span class="badge">Внешний проект</span>{{end}}
+</h1>
+
+<div class="row">
+  <div class="card">
+    <h2>Проект</h2>
+    <dl class="props">
+      <dt>Девелопер</dt><dd>{{with $d.Developer}}{{.Name}}{{else}}<span class="muted">не указан</span>{{end}}</dd>
+      <dt>Город</dt><dd>{{if $d.Project.City}}{{$d.Project.City}}{{else}}<span class="muted">—</span>{{end}}</dd>
+      <dt>Создан</dt><dd>{{datetime $d.Project.CreatedAt}}</dd>
+    </dl>
+    <form class="inline" method="post" action="/projects/{{$d.Project.ID}}/developer" style="margin-top:.8rem">
+      <label>Девелопер проекта
+        <select name="developer_id">
+          <option value="">— не указан —</option>
+          {{range $d.Developers}}<option value="{{.ID}}" {{if eq (idp $d.Project.DeveloperID) (print .ID)}}selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+      </label>
+      <button class="secondary" type="submit">Сохранить</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Портфель компании</h2>
+    {{if $d.Memberships}}
+    <table>
+      <thead><tr><th>С</th><th>По</th><th>Примечание</th><th></th></tr></thead>
+      <tbody>{{range $d.Memberships}}
+        <tr><td>{{if .ValidFrom}}{{datep .ValidFrom}}{{else}}<span class="muted">не указано</span>{{end}}</td>
+            <td>{{if .ValidTo}}{{datep .ValidTo}}{{else}}<span class="muted">действует</span>{{end}}</td>
+            <td>{{.Note}}</td>
+            <td>{{if .ActiveOn $d.Today}}<span class="badge own">сейчас</span>{{end}}</td></tr>
+      {{end}}</tbody>
+    </table>
+    {{else}}<p class="muted">Проект не входит в портфель компании.</p>{{end}}
+    <form class="inline" method="post" action="/projects/{{$d.Project.ID}}/portfolio" style="margin-top:.8rem">
+      <label>С даты<input type="date" name="valid_from" value="{{$form.Value "portfolio" "valid_from" ""}}"></label>
+      <label>По дату<input type="date" name="valid_to" value="{{$form.Value "portfolio" "valid_to" ""}}"></label>
+      <label>Примечание<input name="note" value="{{$form.Value "portfolio" "note" ""}}"></label>
+      <button class="secondary" type="submit">Включить в портфель</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Отношения с другими проектами</h2>
+  <p class="hint">Направленное отношение: связанный проект является конкурентом или референсом <em>для этого</em> проекта.</p>
+  {{if $d.Relations}}
+  <table>
+    <thead><tr><th>Связанный проект</th><th>Тип</th><th>Обоснование</th><th>Период</th><th></th></tr></thead>
+    <tbody>{{range $d.Relations}}
+      <tr>
+        <td><a href="/projects/{{.RelatedProject.ID}}">{{.RelatedProject.Name}}</a></td>
+        <td>{{relationType .Relation.Type}}</td>
+        <td>{{.Relation.Rationale}}</td>
+        <td>{{date .Relation.ValidFrom}} — {{if .Relation.ValidTo}}{{datep .Relation.ValidTo}}{{else}}н. в.{{end}}</td>
+        <td>{{if .Active}}<span class="badge own">действует</span>{{else}}<span class="badge">не действует</span>{{end}}</td>
+      </tr>
+    {{end}}</tbody>
+  </table>
+  {{else}}<p class="muted">Отношений пока нет.</p>{{end}}
+  {{if $d.OtherProjects}}
+  <form class="grid" method="post" action="/projects/{{$d.Project.ID}}/relations" style="margin-top:.8rem">
+    <label>Связанный проект*
+      <select name="related_project_id" required>
+        {{range $d.OtherProjects}}<option value="{{.Project.ID}}" {{if eq ($form.Value "relation" "related_project_id" "") (print .Project.ID)}}selected{{end}}>{{.Project.Name}}</option>{{end}}
+      </select>
+    </label>
+    <label>Тип*
+      <select name="relation_type">{{range relTypes}}<option value="{{.}}" {{if eq ($form.Value "relation" "relation_type" "") (print .)}}selected{{end}}>{{relationType .}}</option>{{end}}</select>
+    </label>
+    <label>С даты*<input type="date" name="valid_from" required value="{{$form.Value "relation" "valid_from" (inputDate $d.Today)}}"></label>
+    <label>По дату<input type="date" name="valid_to" value="{{$form.Value "relation" "valid_to" ""}}"></label>
+    <label>Обоснование<input name="rationale" value="{{$form.Value "relation" "rationale" ""}}"></label>
+    <div><button class="secondary" type="submit">Добавить отношение</button></div>
+  </form>
+  {{else}}<p class="hint">Создайте ещё один проект, чтобы задать отношение.</p>{{end}}
+</div>
+
+<div class="card">
+  <h2>Корпуса и секции</h2>
+  {{if $d.Buildings}}
+  <ul>{{range $d.Buildings}}
+    <li><strong>{{.Building.Name}}</strong>{{if .Sections}}: секции {{range $i, $s := .Sections}}{{if $i}}, {{end}}{{$s.Name}}{{end}}{{else}} <span class="muted">(без секций)</span>{{end}}</li>
+  {{end}}</ul>
+  {{else}}<p class="muted">Корпусов нет. Лоты можно добавлять и без корпуса.</p>{{end}}
+  <div class="row">
+    <form class="inline" method="post" action="/projects/{{$d.Project.ID}}/buildings">
+      <label>Новый корпус<input name="name" required maxlength="300" placeholder="Корпус 1" value="{{$form.Value "building" "name" ""}}"></label>
+      <button class="secondary" type="submit">Добавить корпус</button>
+    </form>
+    {{if $d.Buildings}}
+    <form class="inline" method="post" action="/projects/{{$d.Project.ID}}/sections">
+      <label>Корпус<select name="building_id">{{range $d.Buildings}}<option value="{{.Building.ID}}">{{.Building.Name}}</option>{{end}}</select></label>
+      <label>Новая секция<input name="name" required maxlength="300" placeholder="1" value="{{$form.Value "section" "name" ""}}"></label>
+      <button class="secondary" type="submit">Добавить секцию</button>
+    </form>
+    {{end}}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Лоты</h2>
+  {{if $d.Lots}}
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr>
+      <th>Корпус</th><th>Секция</th><th>Номер</th><th>Тип</th><th class="num">Этаж</th><th class="num">Комнат</th>
+      <th class="num">Площадь</th><th class="num">Цена</th><th class="num">Цена до скидки</th><th class="num">Цена за м²</th>
+      <th>Статус</th><th>Подтверждено</th>
+    </tr></thead>
+    <tbody>{{range $d.Lots}}
+      <tr>
+        <td>{{if .BuildingName}}{{.BuildingName}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>{{if .SectionName}}{{.SectionName}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td><a href="/lots/{{.Lot.ID}}">{{.Lot.Placement.Number}}</a></td>
+        <td>{{lotType .Lot.Placement.Type}}</td>
+        <td class="num">{{intp .Lot.Placement.Floor}}</td>
+        {{with .Current}}
+        <td class="num">{{intp .State.Rooms}}</td>
+        <td class="num">{{area .State.AreaTotal}}</td>
+        <td class="num">{{money .State.Price}}</td>
+        <td class="num">{{money .State.PriceBeforeDiscount}}</td>
+        <td class="num">{{money .State.PricePerSqm}}</td>
+        <td>{{status .State.Status}}{{if eq (print .State.Presence) "delisted"}} <span class="badge">снят с публикации</span>{{end}}</td>
+        <td>{{datetime .LastObservedAt}}</td>
+        {{else}}
+        <td colspan="7" class="muted">нет наблюдений</td>
+        {{end}}
+      </tr>
+    {{end}}</tbody>
+  </table>
+  </div>
+  {{else}}<p class="muted">Лотов пока нет.</p>{{end}}
+
+  <h2>Новый лот с первым наблюдением</h2>
+  <form class="grid" method="post" action="/projects/{{$d.Project.ID}}/lots">
+    <label>Корпус / секция
+      <select name="placement">
+        <option value="">— без корпуса —</option>
+        {{range $d.Buildings}}
+          <option value="b:{{.Building.ID}}" {{if eq ($form.Value "lot" "placement" "") (print "b:" .Building.ID)}}selected{{end}}>{{.Building.Name}}</option>
+          {{$b := .Building}}{{range .Sections}}<option value="s:{{.ID}}" {{if eq ($form.Value "lot" "placement" "") (print "s:" .ID)}}selected{{end}}>{{$b.Name}} / секция {{.Name}}</option>{{end}}
+        {{end}}
+      </select>
+    </label>
+    <label>Тип*
+      <select name="lot_type">{{range lotTypes}}<option value="{{.}}" {{if eq ($form.Value "lot" "lot_type" "apartment") (print .)}}selected{{end}}>{{lotType .}}</option>{{end}}</select>
+    </label>
+    <label>Номер*<input name="number" required maxlength="50" value="{{$form.Value "lot" "number" ""}}"></label>
+    <label>Этаж<input name="floor" inputmode="numeric" value="{{$form.Value "lot" "floor" ""}}"></label>
+    <label>Комнат<input name="rooms" inputmode="numeric" value="{{$form.Value "lot" "rooms" ""}}"></label>
+    <label>Общая площадь, м²<input name="area_total" inputmode="decimal" placeholder="67,4" value="{{$form.Value "lot" "area_total" ""}}"></label>
+    <label>Цена, ₽<input name="price" inputmode="decimal" placeholder="15 900 000" value="{{$form.Value "lot" "price" ""}}"></label>
+    <label>Цена до скидки, ₽<input name="price_before_discount" inputmode="decimal" value="{{$form.Value "lot" "price_before_discount" ""}}"></label>
+    {{$selStatus := $form.Value "lot" "status" "available"}}
+    <label>Статус
+      <select name="status">{{range $d.Statuses}}<option value="{{.}}" {{if eq $selStatus (print .)}}selected{{end}}>{{status .}}</option>{{end}}</select>
+    </label>
+    <label>Отделка (как указано источником)<input name="finish" maxlength="200" value="{{$form.Value "lot" "finish" ""}}"></label>
+    <label>Дата наблюдения*<input type="datetime-local" name="observed_at" required value="{{$form.Value "lot" "observed_at" (inputNow $d.Now)}}"></label>
+    <label>Источник*
+      <select name="data_source_id">{{range $d.Sources}}{{if .IsActive}}<option value="{{.ID}}" {{if eq ($form.Value "lot" "data_source_id" $d.ManualSource) (print .ID)}}selected{{end}}>{{.Name}}</option>{{end}}{{end}}</select>
+    </label>
+    <label>URL источника<input name="source_url" type="url" value="{{$form.Value "lot" "source_url" ""}}"></label>
+    <div><button type="submit">Добавить лот</button></div>
+  </form>
+  <p class="hint">Цена — актуальная цена предложения на дату наблюдения. Цену до скидки указывайте только если скидка явно указана источником.</p>
+</div>
+{{end}}

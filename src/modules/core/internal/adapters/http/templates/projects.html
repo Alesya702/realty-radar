@@ -1,0 +1,44 @@
+{{define "content"}}
+{{$form := .Data.Form}}
+<h1>Проекты</h1>
+<p class="muted">Собственные и внешние проекты находятся в одной модели. Принадлежность портфелю компании и отношения
+  с конкурентами задаются на карточке проекта.</p>
+
+<div class="card">
+  {{if .Data.Projects}}
+  <table>
+    <thead><tr><th>Проект</th><th>Девелопер</th><th>Город</th><th>Роль</th><th class="num">Лотов</th></tr></thead>
+    <tbody>
+    {{range .Data.Projects}}
+      <tr>
+        <td><a href="/projects/{{.Project.ID}}">{{.Project.Name}}</a></td>
+        <td>{{if .DeveloperName}}{{.DeveloperName}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>{{if .Project.City}}{{.Project.City}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>{{if .InPortfolio}}<span class="badge own">Проект компании</span>{{else}}<span class="badge">Внешний</span>{{end}}</td>
+        <td class="num">{{.LotCount}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">Проектов пока нет. Создайте проект ниже или загрузите демонстрационные данные командой
+    <code>go run ./src/cmd/realtyradar demo</code>.</p>
+  {{end}}
+</div>
+
+<div class="card">
+  <h2>Новый проект</h2>
+  <form class="grid" method="post" action="/projects">
+    <label>Название ЖК*<input name="name" required maxlength="300" value="{{$form.Value "project" "name" ""}}"></label>
+    <label>Девелопер
+      <select name="developer_id">
+        <option value="">— не указан —</option>
+        {{range .Data.Developers}}<option value="{{.ID}}" {{if eq ($form.Value "project" "developer_id" "") (print .ID)}}selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+    </label>
+    <label>Город<input name="city" maxlength="300" value="{{$form.Value "project" "city" ""}}"></label>
+    <div><button type="submit">Создать проект</button></div>
+  </form>
+  <p class="hint">Нет нужного девелопера? <a href="/developers">Добавьте его</a>.</p>
+</div>
+{{end}}

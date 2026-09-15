@@ -1,0 +1,11 @@
+.git
+.github
+.env
+.env.*
+bin
+var
+tmp
+docs
+tests
+scripts
+*.exe

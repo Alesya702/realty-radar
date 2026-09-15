@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: realtyradar
+          POSTGRES_PASSWORD: realtyradar
+          POSTGRES_DB: realtyradar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U realtyradar -d realtyradar_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Checks (gofmt, vet, unit and architecture tests)
+        run: bash scripts/check.sh
+
+      - name: Integration tests
+        run: bash scripts/test-integration.sh
+        env:
+          RR_TEST_DATABASE_URL: postgres://realtyradar:realtyradar@localhost:5432/realtyradar_test?sslmode=disable
+
+      - name: Build
+        run: go build -o bin/realtyradar ./src/cmd/realtyradar

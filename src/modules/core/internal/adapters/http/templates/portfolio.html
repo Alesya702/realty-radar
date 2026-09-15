@@ -1,0 +1,14 @@
+{{define "content"}}
+<h1>Портфель компании</h1>
+<p class="muted">Проекты, входящие в портфель компании на {{date .Data.Today}}. Проект добавляется в портфель на его карточке.</p>
+<div class="card">
+  {{if .Data.Projects}}
+  <table>
+    <thead><tr><th>Проект</th><th>Девелопер</th><th>Город</th><th class="num">Лотов</th></tr></thead>
+    <tbody>{{range .Data.Projects}}
+      <tr><td><a href="/projects/{{.Project.ID}}">{{.Project.Name}}</a></td><td>{{.DeveloperName}}</td><td>{{.Project.City}}</td><td class="num">{{.LotCount}}</td></tr>
+    {{end}}</tbody>
+  </table>
+  {{else}}<p class="muted">В портфеле пока нет проектов.</p>{{end}}
+</div>
+{{end}}

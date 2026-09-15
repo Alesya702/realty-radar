@@ -1,0 +1,145 @@
+{{define "content"}}
+{{$d := .Data}}
+{{$form := .Data.Form}}
+{{$lot := .Data.History.Lot}}
+<p><a href="/projects/{{$d.Project.ID}}">← {{$d.Project.Name}}</a></p>
+<h1>{{lotType $lot.Placement.Type}} № {{$lot.Placement.Number}}</h1>
+
+<div class="row">
+  <div class="card">
+    <h2>Размещение</h2>
+    <dl class="props">
+      <dt>Проект</dt><dd><a href="/projects/{{$d.Project.ID}}">{{$d.Project.Name}}</a></dd>
+      <dt>Корпус</dt><dd>{{if $d.Building}}{{$d.Building}}{{else}}<span class="muted">не указан</span>{{end}}</dd>
+      <dt>Секция</dt><dd>{{if $d.Section}}{{$d.Section}}{{else}}<span class="muted">не указана</span>{{end}}</dd>
+      <dt>Этаж</dt><dd>{{intp $lot.Placement.Floor}}</dd>
+      <dt>Тип</dt><dd>{{lotType $lot.Placement.Type}}</dd>
+      <dt>ID</dt><dd class="muted"><code>{{$lot.ID}}</code></dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Текущее состояние</h2>
+    {{with $d.Current}}
+    <dl class="props">
+      <dt>Цена</dt><dd><strong>{{money .State.Price}}</strong></dd>
+      <dt>Цена до скидки</dt><dd>{{money .State.PriceBeforeDiscount}}</dd>
+      <dt>Скидка</dt><dd>{{money .State.Discount}}</dd>
+      <dt>Цена за м²</dt><dd>{{money .State.PricePerSqm}}</dd>
+      <dt>Общая площадь</dt><dd>{{area .State.AreaTotal}}</dd>
+      <dt>Комнат</dt><dd>{{intp .State.Rooms}}</dd>
+      <dt>Статус</dt><dd>{{status .State.Status}}</dd>
+      <dt>Присутствие</dt><dd>{{presence .State.Presence}}</dd>
+      <dt>Отделка</dt><dd>{{strp .State.Finish}}</dd>
+      <dt>Действует с</dt><dd>{{datetime .ValidFrom}}</dd>
+      <dt>Последнее подтверждение</dt><dd>{{datetime .LastObservedAt}}</dd>
+    </dl>
+    <p class="hint">Цена за м² и скидка вычисляются из цены, цены до скидки и площади и не хранятся.</p>
+    {{else}}<p class="muted">У лота пока нет наблюдений.</p>{{end}}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Состояние на дату</h2>
+  <form class="inline" method="get" action="/lots/{{$lot.ID}}">
+    <label>Дата и время (МСК)<input type="datetime-local" name="at" required value="{{with $d.At}}{{inputNowp .}}{{end}}"></label>
+    <button class="secondary" type="submit">Показать</button>
+  </form>
+  {{if $d.At}}
+    {{with $d.AtState}}
+    <p>На {{datetimep $d.At}}: цена <strong>{{money .State.Price}}</strong>, цена до скидки {{money .State.PriceBeforeDiscount}},
+      площадь {{area .State.AreaTotal}}, комнат {{intp .State.Rooms}}, статус «{{status .State.Status}}», {{presence .State.Presence}}.</p>
+    <p class="hint">Версия действовала с {{datetime .ValidFrom}}{{if .ValidTo}} до {{datetimep .ValidTo}}{{end}};
+      последнее подтверждение этих значений — {{datetime .LastObservedAt}}.</p>
+    {{else}}
+    <p class="muted">На {{datetimep $d.At}} у лота не было известного состояния.</p>
+    {{end}}
+  {{end}}
+</div>
+
+<div class="card">
+  <h2>История изменений</h2>
+  <p class="hint">Новая версия создаётся только при изменении значений. Повторное наблюдение тех же значений лишь сдвигает «последнее подтверждение».
+    {{with $d.History.Primary}}Источник истории: {{.SourceName}}.{{end}}</p>
+  {{if $d.Rows}}
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr>
+      <th>Действует с</th><th>Действует до</th><th>Подтверждено</th><th class="num">Цена</th><th class="num">Цена до скидки</th>
+      <th class="num">Площадь</th><th class="num">Комнат</th><th>Статус</th><th>Присутствие</th><th>Отделка</th>
+    </tr></thead>
+    <tbody>{{range $d.Rows}}
+      {{$c := .Changed}}
+      <tr class="{{if .Version.IsCurrent}}current{{end}}">
+        <td>{{datetime .Version.ValidFrom}}</td>
+        <td>{{if .Version.ValidTo}}{{datetimep .Version.ValidTo}}{{else}}<span class="badge own">текущая</span>{{end}}</td>
+        <td>{{datetime .Version.LastObservedAt}}</td>
+        <td class="num">{{money .Version.State.Price}}{{if index $c "price"}} <span class="badge change">изм.</span>{{end}}</td>
+        <td class="num">{{money .Version.State.PriceBeforeDiscount}}{{if index $c "price_before_discount"}} <span class="badge change">изм.</span>{{end}}</td>
+        <td class="num">{{area .Version.State.AreaTotal}}{{if index $c "area_total"}} <span class="badge change">изм.</span>{{end}}</td>
+        <td class="num">{{intp .Version.State.Rooms}}{{if index $c "rooms"}} <span class="badge change">изм.</span>{{end}}</td>
+        <td>{{status .Version.State.Status}}{{if index $c "status"}} <span class="badge change">изм.</span>{{end}}</td>
+        <td>{{presence .Version.State.Presence}}{{if index $c "presence"}} <span class="badge change">изм.</span>{{end}}</td>
+        <td>{{strp .Version.State.Finish}}{{if index $c "finish"}} <span class="badge change">изм.</span>{{end}}</td>
+      </tr>
+    {{end}}</tbody>
+  </table>
+  </div>
+  {{else}}<p class="muted">История пуста.</p>{{end}}
+</div>
+
+<div class="card">
+  <h2>Новое наблюдение</h2>
+  <p class="hint">Форма заполнена текущими значениями. Измените то, что изменилось. Очищенное поле означает, что значения больше нет
+    (например, скидка закончилась).</p>
+  {{$cur := $d.Current}}
+  <form class="grid" method="post" action="/lots/{{$lot.ID}}/observations">
+    {{if $cur}}
+    <label>Цена, ₽<input name="price" inputmode="decimal" value="{{$form.Value "observation" "price" (inputMoney $cur.State.Price)}}"></label>
+    <label>Цена до скидки, ₽<input name="price_before_discount" inputmode="decimal" value="{{$form.Value "observation" "price_before_discount" (inputMoney $cur.State.PriceBeforeDiscount)}}"></label>
+    <label>Общая площадь, м²<input name="area_total" inputmode="decimal" value="{{$form.Value "observation" "area_total" (inputArea $cur.State.AreaTotal)}}"></label>
+    <label>Комнат<input name="rooms" inputmode="numeric" value="{{$form.Value "observation" "rooms" (inputInt $cur.State.Rooms)}}"></label>
+    {{$selStatus := $form.Value "observation" "status" (print $cur.State.Status)}}
+    <label>Статус<select name="status">{{range $d.Statuses}}<option value="{{.}}" {{if eq $selStatus (print .)}}selected{{end}}>{{status .}}</option>{{end}}</select></label>
+    {{$selPresence := $form.Value "observation" "presence" (print $cur.State.Presence)}}
+    <label>Присутствие
+      <select name="presence">
+        <option value="listed" {{if eq $selPresence "listed"}}selected{{end}}>{{presence "listed"}}</option>
+        <option value="delisted" {{if eq $selPresence "delisted"}}selected{{end}}>{{presence "delisted"}}</option>
+      </select>
+    </label>
+    <label>Отделка<input name="finish" maxlength="200" value="{{$form.Value "observation" "finish" (inputStr $cur.State.Finish)}}"></label>
+    {{else}}
+    <label>Цена, ₽<input name="price" inputmode="decimal" value="{{$form.Value "observation" "price" ""}}"></label>
+    <label>Цена до скидки, ₽<input name="price_before_discount" inputmode="decimal" value="{{$form.Value "observation" "price_before_discount" ""}}"></label>
+    <label>Общая площадь, м²<input name="area_total" inputmode="decimal" value="{{$form.Value "observation" "area_total" ""}}"></label>
+    <label>Комнат<input name="rooms" inputmode="numeric" value="{{$form.Value "observation" "rooms" ""}}"></label>
+    <label>Статус<select name="status">{{range $d.Statuses}}<option value="{{.}}">{{status .}}</option>{{end}}</select></label>
+    <input type="hidden" name="presence" value="listed">
+    <label>Отделка<input name="finish" maxlength="200" value="{{$form.Value "observation" "finish" ""}}"></label>
+    {{end}}
+    <label>Дата наблюдения*<input type="datetime-local" name="observed_at" required value="{{$form.Value "observation" "observed_at" (inputNow $d.Now)}}"></label>
+    <label>Источник*
+      <select name="data_source_id">{{range $d.Sources}}{{if .IsActive}}<option value="{{.ID}}" {{if eq ($form.Value "observation" "data_source_id" $d.ManualSource) (print .ID)}}selected{{end}}>{{.Name}}</option>{{end}}{{end}}</select>
+    </label>
+    <div><button type="submit">Записать наблюдение</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Размещения в источниках</h2>
+  <table>
+    <thead><tr><th>Источник</th><th>Ключ источника</th><th>URL</th><th>Первое наблюдение</th><th>Последнее наблюдение</th><th></th></tr></thead>
+    <tbody>{{range $d.History.Listings}}
+      <tr>
+        <td>{{.SourceName}}</td>
+        <td>{{strp .Listing.SourceKey}}</td>
+        <td>{{with .Listing.SourceURL}}<a href="{{.}}" rel="noopener noreferrer">ссылка</a>{{else}}—{{end}}</td>
+        <td>{{datetime .Listing.FirstSeenAt}}</td>
+        <td>{{datetime .Listing.LastSeenAt}}</td>
+        <td>{{if eq (print .Listing.ID) (idp $lot.PrimaryListingID)}}<span class="badge own">основное</span>{{end}}</td>
+      </tr>
+    {{end}}</tbody>
+  </table>
+</div>
+{{end}}

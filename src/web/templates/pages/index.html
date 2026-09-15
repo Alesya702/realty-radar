@@ -1,0 +1,17 @@
+{{define "content"}}
+<h1>Realty Radar</h1>
+<div class="card">
+  <p>Система сбора, хранения, анализа и сравнения данных по рынку новостроек.</p>
+  <p><strong>Статус:</strong> реализован Core MVP — единая модель рынка (девелоперы, проекты, корпуса, секции, лоты),
+    история состояния лотов, портфель компании и отношения проектов. Импорт PDF, аналитика и остальные модули ещё не реализованы.</p>
+  {{with .Data.Nav}}
+  <p>Разделы:</p>
+  <ul>{{range .}}<li><a href="{{.Href}}">{{.Title}}</a></li>{{end}}</ul>
+  {{end}}
+  <dl class="props">
+    <dt>Версия</dt><dd>{{.Data.Version}}</dd>
+    <dt>Окружение</dt><dd>{{.Data.Env}}</dd>
+  </dl>
+  <p class="muted">Технические эндпоинты: <a href="/healthz"><code>/healthz</code></a>, <a href="/readyz"><code>/readyz</code></a>.</p>
+</div>
+{{end}}

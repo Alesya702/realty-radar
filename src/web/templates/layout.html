@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} — Realty Radar</title>
+  <style>
+    :root { --border: #d0d7de; --muted: #57606a; --accent: #0969da; --bg: #f6f8fa; --danger: #cf222e; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; color: #1f2328; background: var(--bg); font-size: 15px; }
+    header { background: #24292f; color: #fff; padding: .6rem 1rem; display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; }
+    header a { color: #fff; text-decoration: none; }
+    header .brand { font-weight: 700; }
+    header nav { display: flex; gap: 1rem; flex-wrap: wrap; }
+    header nav a { opacity: .85; }
+    header nav a:hover { opacity: 1; text-decoration: underline; }
+    main { max-width: 72rem; margin: 1rem auto; padding: 0 1rem 3rem; }
+    h1 { margin: .5rem 0 1rem; font-size: 1.6rem; }
+    h2 { font-size: 1.15rem; margin: 1.5rem 0 .5rem; }
+    a { color: var(--accent); }
+    .card { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    .muted { color: var(--muted); }
+    .error { background: #ffebe9; border: 1px solid #ff8182; color: var(--danger); border-radius: 6px; padding: .6rem .9rem; margin-bottom: 1rem; }
+    .badge { display: inline-block; font-size: .78rem; padding: .05rem .45rem; border-radius: 1rem; border: 1px solid var(--border); background: #eef1f4; white-space: nowrap; }
+    .badge.own { background: #dafbe1; border-color: #4ac26b; }
+    .badge.change { background: #fff8c5; border-color: #d4a72c; }
+    table { border-collapse: collapse; width: 100%; background: #fff; }
+    th, td { border-bottom: 1px solid var(--border); padding: .4rem .5rem; text-align: left; vertical-align: top; }
+    th { font-weight: 600; background: #f6f8fa; font-size: .85rem; }
+    td.num, th.num { text-align: right; white-space: nowrap; }
+    tr.current td { background: #f0fff4; }
+    form.inline { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; }
+    form.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .6rem; align-items: end; }
+    label { display: flex; flex-direction: column; font-size: .8rem; color: var(--muted); gap: .15rem; }
+    input, select, textarea { font: inherit; padding: .3rem .4rem; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: #1f2328; }
+    button { font: inherit; padding: .35rem .8rem; border-radius: 6px; border: 1px solid #1f883d; background: #1f883d; color: #fff; cursor: pointer; }
+    button.secondary { background: #f6f8fa; color: #1f2328; border-color: var(--border); }
+    dl.props { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; margin: 0; }
+    dl.props dt { color: var(--muted); }
+    dl.props dd { margin: 0; }
+    .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .row > .card { flex: 1 1 22rem; }
+    .hint { font-size: .8rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+<header>
+  <a class="brand" href="/">Realty Radar</a>
+  <nav>
+    {{range .Nav}}<a href="{{.Href}}">{{.Title}}</a>{{end}}
+  </nav>
+</header>
+<main>
+  {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+  {{template "content" .}}
+</main>
+</body>
+</html>

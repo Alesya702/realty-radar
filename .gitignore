@@ -1,0 +1,28 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+/bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Local runtime data (future file storage for screenshots, PDFs, raw payloads)
+/var/
+/tmp/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Office lock files (e.g. while the source requirements .docx is open)
+~$*
+
+# Office temporary lock files
+.~lock.*#
