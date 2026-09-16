@@ -191,13 +191,66 @@ func TestApplyObservationRejects(t *testing.T) {
 
 func TestNewIngestionBatch(t *testing.T) {
 	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
-	if _, err := NewIngestionBatch(NewID(), NewID(), OriginManualEntry, nil, now.Add(-time.Hour), now); err != nil {
+	header := func(mutate func(*BatchHeader)) BatchHeader {
+		h := BatchHeader{DataSourceID: NewID(), OriginKind: OriginManualEntry, ObservedAt: now.Add(-time.Hour)}
+		if mutate != nil {
+			mutate(&h)
+		}
+		return h
+	}
+	b, err := NewIngestionBatch(NewID(), header(nil), now)
+	if err != nil {
 		t.Fatalf("valid batch rejected: %v", err)
 	}
-	_, err := NewIngestionBatch(NewID(), NewID(), OriginManualEntry, nil, now.Add(time.Hour), now)
+	// Manual entry defaults; a partial batch is the only supported completeness.
+	if b.ObservedAtBasis != BasisEntryTime || b.Completeness != CompletenessPartial {
+		t.Errorf("defaults = %q/%q, want entry_time/partial", b.ObservedAtBasis, b.Completeness)
+	}
+	if !b.ReceivedAt.Equal(now) || b.ConfirmedAt != nil {
+		t.Errorf("received/confirmed = %v/%v", b.ReceivedAt, b.ConfirmedAt)
+	}
+
+	_, err = NewIngestionBatch(NewID(), header(func(h *BatchHeader) { h.ObservedAt = now.Add(time.Hour) }), now)
 	assertRuleCode(t, err, CodeObservationInFuture)
-	_, err = NewIngestionBatch(NewID(), NewID(), "automated_collection", nil, now, now)
+	_, err = NewIngestionBatch(NewID(), header(func(h *BatchHeader) { h.OriginKind = "automated_collection" }), now)
 	assertRuleCode(t, err, CodeInvalidValue)
-	_, err = NewIngestionBatch(NewID(), ID{}, OriginDocumentImport, nil, now, now)
+	_, err = NewIngestionBatch(NewID(), header(func(h *BatchHeader) { h.DataSourceID = ID{} }), now)
 	assertRuleCode(t, err, CodeRequired)
+
+	// A document import must state what the moment of its data is based on.
+	_, err = NewIngestionBatch(NewID(), header(func(h *BatchHeader) { h.OriginKind = OriginDocumentImport }), now)
+	assertRuleCode(t, err, CodeRequired)
+	doc, err := NewIngestionBatch(NewID(), header(func(h *BatchHeader) {
+		h.OriginKind, h.ObservedAtBasis = OriginDocumentImport, BasisDocumentDate
+	}), now)
+	if err != nil || doc.ObservedAtBasis != BasisDocumentDate {
+		t.Fatalf("document import with a basis: %+v, %v", doc, err)
+	}
+	_, err = NewIngestionBatch(NewID(), header(func(h *BatchHeader) { h.ObservedAtBasis = "guessed" }), now)
+	assertRuleCode(t, err, CodeInvalidValue)
+
+	// complete requires delisting by absence and is not supported yet.
+	_, err = NewIngestionBatch(NewID(), header(func(h *BatchHeader) { h.Completeness = CompletenessComplete }), now)
+	assertRuleCode(t, err, CodeInvalidValue)
+
+	// Scope and confirmation.
+	scoped, err := NewIngestionBatch(NewID(), header(func(h *BatchHeader) {
+		confirmed := now.Add(-time.Minute)
+		h.Scope = BatchScope{LotTypes: []LotType{LotTypeApartment}}
+		h.ConfirmedAt = &confirmed
+	}), now)
+	if err != nil || scoped.ConfirmedAt == nil || !scoped.ConfirmedAt.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("scoped batch: %+v, %v", scoped, err)
+	}
+	_, err = NewIngestionBatch(NewID(), header(func(h *BatchHeader) {
+		h.Scope = BatchScope{LotTypes: []LotType{LotTypeApartment, LotTypeApartment}}
+	}), now)
+	assertRuleCode(t, err, CodeInvalidValue)
+	_, err = NewIngestionBatch(NewID(), header(func(h *BatchHeader) { h.Scope = BatchScope{LotTypes: []LotType{"villa"}} }), now)
+	assertRuleCode(t, err, CodeInvalidValue)
+	_, err = NewIngestionBatch(NewID(), header(func(h *BatchHeader) {
+		confirmed := now.Add(time.Hour)
+		h.ConfirmedAt = &confirmed
+	}), now)
+	assertRuleCode(t, err, CodeObservationInFuture)
 }

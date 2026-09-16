@@ -1,0 +1,15 @@
+# Line endings. Sources and scripts are always checked out with LF, also on
+# Windows with core.autocrlf=true: CRLF breaks `bash scripts/*.sh` under Git
+# Bash (`set -euo pipefail` reads as `pipefail\r`) and makes gofmt report every
+# file as unformatted.
+*.go    text eol=lf
+*.sql   text eol=lf
+*.sh    text eol=lf
+*.html  text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+go.mod  text eol=lf
+go.sum  text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf

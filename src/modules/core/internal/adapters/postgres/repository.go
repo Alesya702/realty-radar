@@ -260,9 +260,15 @@ func (s *store) GetProject(ctx context.Context, id domain.ID) (domain.Project, e
 	return p, nil
 }
 
+// LockProject serializes the writers of one project. FOR NO KEY UPDATE is the
+// weakest lock that conflicts with itself, so two batches of the same project
+// still wait for each other; unlike FOR UPDATE it does not conflict with the
+// FOR KEY SHARE lock PostgreSQL takes on the project row when another
+// transaction inserts a row referencing the project (relations, portfolio,
+// buildings, lots), which otherwise deadlocks (review M5).
 func (s *store) LockProject(ctx context.Context, id domain.ID) error {
 	var rid pgtype.UUID
-	err := s.q.QueryRow(ctx, `SELECT id FROM core.projects WHERE id = $1 FOR UPDATE`, uuidArg(id)).Scan(&rid)
+	err := s.q.QueryRow(ctx, `SELECT id FROM core.projects WHERE id = $1 FOR NO KEY UPDATE`, uuidArg(id)).Scan(&rid)
 	if err != nil {
 		return notFound(err, "project", id)
 	}

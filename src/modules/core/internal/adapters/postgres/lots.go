@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"realtyradar/src/modules/core/internal/app"
@@ -57,23 +58,16 @@ func (s *store) GetLot(ctx context.Context, id domain.ID) (domain.Lot, error) {
 	return lot, nil
 }
 
-func (s *store) FindLotByPlacement(ctx context.Context, p domain.Placement) (*domain.Lot, error) {
-	lot, err := scanLot(s.q.QueryRow(ctx, `
+func (s *store) ListLotsByNumber(ctx context.Context, projectID domain.ID, lotType domain.LotType, number string) ([]domain.Lot, error) {
+	rows, err := s.q.Query(ctx, `
 		SELECT `+lotColumns+` FROM core.lots l
-		WHERE l.project_id = $1
-		  AND l.building_id IS NOT DISTINCT FROM $2
-		  AND l.section_id IS NOT DISTINCT FROM $3
-		  AND l.lot_type = $4
-		  AND l.number = $5
-		LIMIT 1`,
-		uuidArg(p.ProjectID), nullUUIDArg(p.BuildingID), nullUUIDArg(p.SectionID), string(p.Type), p.Number))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
+		WHERE l.project_id = $1 AND l.lot_type = $2 AND l.number = $3
+		ORDER BY l.id`,
+		uuidArg(projectID), string(lotType), number)
 	if err != nil {
-		return nil, fmt.Errorf("find lot by placement: %w", err)
+		return nil, fmt.Errorf("list lots by number: %w", err)
 	}
-	return &lot, nil
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.Lot, error) { return scanLot(row) })
 }
 
 func (s *store) SetPrimaryListing(ctx context.Context, lotID, listingID domain.ID) error {
@@ -191,12 +185,36 @@ func (s *store) ListListings(ctx context.Context, lotID domain.ID) ([]app.Listin
 
 // ---- batches -------------------------------------------------------------------
 
+const batchColumns = `id, data_source_id, origin_kind, origin_ref, observed_at, observed_at_basis,
+	scope_building_id, scope_lot_types, completeness, confirmed_at, content_hash, received_at`
+
+// originRefUniqueConstraint is the unique key that makes a repeated origin
+// reference impossible.
+const originRefUniqueConstraint = "ingestion_batches_origin_kind_origin_ref_key"
+
 func (s *store) InsertBatch(ctx context.Context, b domain.IngestionBatch) error {
+	lotTypes := make([]string, 0, len(b.Scope.LotTypes))
+	for _, t := range b.Scope.LotTypes {
+		lotTypes = append(lotTypes, string(t))
+	}
+	if len(lotTypes) == 0 {
+		lotTypes = nil
+	}
 	_, err := s.q.Exec(ctx, `
-		INSERT INTO core.ingestion_batches (id, data_source_id, origin_kind, origin_ref, observed_at, received_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		uuidArg(b.ID), uuidArg(b.DataSourceID), string(b.OriginKind), nullUUIDArg(b.OriginRef), b.ObservedAt, b.ReceivedAt)
+		INSERT INTO core.ingestion_batches (`+batchColumns+`)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		uuidArg(b.ID), uuidArg(b.DataSourceID), string(b.OriginKind), nullUUIDArg(b.OriginRef),
+		b.ObservedAt, string(b.ObservedAtBasis), nullUUIDArg(b.Scope.BuildingID), lotTypes,
+		string(b.Completeness), b.ConfirmedAt, b.ContentHash, b.ReceivedAt)
 	if err != nil {
+		// Another transaction applied a batch with the same origin reference
+		// concurrently (possible only for a different project, which the
+		// project lock does not serialize).
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == originRefUniqueConstraint {
+			return &domain.RuleError{Code: domain.CodeOriginConflict, Field: "origin_ref",
+				Detail: "a batch with the same origin reference was applied concurrently"}
+		}
 		return fmt.Errorf("insert batch: %w", err)
 	}
 	return nil
@@ -204,12 +222,14 @@ func (s *store) InsertBatch(ctx context.Context, b domain.IngestionBatch) error 
 
 func (s *store) FindBatchByOrigin(ctx context.Context, kind domain.OriginKind, ref domain.ID) (*domain.IngestionBatch, error) {
 	var b domain.IngestionBatch
-	var id, source, origin pgtype.UUID
-	var k string
-	err := s.q.QueryRow(ctx, `
-		SELECT id, data_source_id, origin_kind, origin_ref, observed_at, received_at
+	var id, source, origin, scopeBuilding pgtype.UUID
+	var k, basis, completeness string
+	var lotTypes []string
+	var confirmedAt pgtype.Timestamptz
+	err := s.q.QueryRow(ctx, `SELECT `+batchColumns+`
 		FROM core.ingestion_batches WHERE origin_kind = $1 AND origin_ref = $2`, string(kind), uuidArg(ref)).
-		Scan(&id, &source, &k, &origin, &b.ObservedAt, &b.ReceivedAt)
+		Scan(&id, &source, &k, &origin, &b.ObservedAt, &basis, &scopeBuilding, &lotTypes,
+			&completeness, &confirmedAt, &b.ContentHash, &b.ReceivedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -217,6 +237,12 @@ func (s *store) FindBatchByOrigin(ctx context.Context, kind domain.OriginKind, r
 		return nil, fmt.Errorf("find batch: %w", err)
 	}
 	b.ID, b.DataSourceID, b.OriginKind, b.OriginRef = idFrom(id), idFrom(source), domain.OriginKind(k), idPtrFrom(origin)
+	b.ObservedAtBasis, b.Completeness = domain.DateBasis(basis), domain.Completeness(completeness)
+	b.Scope.BuildingID = idPtrFrom(scopeBuilding)
+	for _, t := range lotTypes {
+		b.Scope.LotTypes = append(b.Scope.LotTypes, domain.LotType(t))
+	}
+	b.ConfirmedAt = timestampPtr(confirmedAt)
 	return &b, nil
 }
 

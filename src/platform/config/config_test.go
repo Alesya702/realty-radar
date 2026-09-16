@@ -28,8 +28,10 @@ func TestFromLookupDefaults(t *testing.T) {
 	if cfg.Log.Level != slog.LevelInfo || cfg.Log.Format != "text" {
 		t.Errorf("Log = %+v, want info/text", cfg.Log)
 	}
-	if cfg.HTTP.Addr != ":8080" || cfg.HTTP.ShutdownTimeout != 10*time.Second {
-		t.Errorf("HTTP = %+v, want :8080/10s", cfg.HTTP)
+	// The default binds the server to the loopback interface: the MVP has no
+	// authentication, so it must not be reachable from the network (A-02).
+	if cfg.HTTP.Addr != "127.0.0.1:8080" || cfg.HTTP.ShutdownTimeout != 10*time.Second {
+		t.Errorf("HTTP = %+v, want 127.0.0.1:8080/10s", cfg.HTTP)
 	}
 	if cfg.Database.MaxConns != 10 {
 		t.Errorf("Database.MaxConns = %d, want 10", cfg.Database.MaxConns)

@@ -65,4 +65,40 @@ const (
 	CodeDuplicateInBatch     = "duplicate_in_batch"
 	CodeUnknownRef           = "unknown_ref"
 	CodeInvalidTarget        = "invalid_target"
+	CodeMatchConflict        = "match_conflict"
+	CodeOriginConflict       = "origin_conflict"
 )
+
+// RuleCodes lists every rule code the domain can produce. Adapters use it to
+// check that each code has a user message; a domain test checks that the list
+// covers all Code* constants of the package.
+var RuleCodes = []string{
+	CodeRequired,
+	CodeTooLong,
+	CodeInvalidValue,
+	CodeInvalidNumber,
+	CodeMustBePositive,
+	CodeMustNotBeNegative,
+	CodeOutOfRange,
+	CodeDiscountWithoutPrice,
+	CodeDiscountNotGreater,
+	CodeSectionWithoutBldg,
+	CodePlacementMismatch,
+	CodeLotAlreadyExists,
+	CodeNameTaken,
+	CodeCodeTaken,
+	CodeSelfRelation,
+	CodePeriodOrder,
+	CodePeriodOverlap,
+	CodeObservationInFuture,
+	CodeObservationOutOfOrdr,
+	CodeHistoryConflict,
+	CodeSourceInactive,
+	CodeSourceKeyConflict,
+	CodeWrongProject,
+	CodeDuplicateInBatch,
+	CodeUnknownRef,
+	CodeInvalidTarget,
+	CodeMatchConflict,
+	CodeOriginConflict,
+}

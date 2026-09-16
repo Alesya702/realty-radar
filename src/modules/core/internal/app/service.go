@@ -99,15 +99,20 @@ func (s *Service) GetProject(ctx context.Context, id domain.ID) (domain.Project,
 }
 
 // ListProjects returns all projects with developer name, portfolio flag (on
-// the given date) and lot count.
+// the business date of the given moment) and lot count.
 func (s *Service) ListProjects(ctx context.Context, on time.Time) ([]ProjectSummary, error) {
-	return s.repo.ListProjects(ctx, domain.DateOf(on), false)
+	return s.repo.ListProjects(ctx, domain.BusinessDateOf(on), false)
 }
 
-// ListPortfolioProjects returns projects that belong to the company portfolio on the date.
+// ListPortfolioProjects returns projects that belong to the company portfolio
+// on the business date of the given moment.
 func (s *Service) ListPortfolioProjects(ctx context.Context, on time.Time) ([]ProjectSummary, error) {
-	return s.repo.ListProjects(ctx, domain.DateOf(on), true)
+	return s.repo.ListProjects(ctx, domain.BusinessDateOf(on), true)
 }
+
+// Today returns the current business date (A-07). Callers that need "now" as a
+// business date use it instead of converting time zones themselves.
+func (s *Service) Today() time.Time { return domain.BusinessDateOf(s.now()) }
 
 // AddBuilding creates a building within a project.
 func (s *Service) AddBuilding(ctx context.Context, projectID domain.ID, name string) (domain.Building, error) {
@@ -316,8 +321,10 @@ type RelationView struct {
 }
 
 // ListProjectRelations returns the relations where the project is the subject
-// (its competitors and references), with activity on the given date.
+// (its competitors and references), with activity on the business date of the
+// given moment.
 func (s *Service) ListProjectRelations(ctx context.Context, subjectID domain.ID, on time.Time) ([]RelationView, error) {
+	on = domain.BusinessDateOf(on)
 	relations, err := s.repo.ListRelationsBySubject(ctx, subjectID)
 	if err != nil {
 		return nil, fmt.Errorf("list relations of project %s: %w", subjectID, err)

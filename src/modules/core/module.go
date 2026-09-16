@@ -54,6 +54,12 @@ type (
 	DataSourceKind = domain.DataSourceKind
 	OriginKind     = domain.OriginKind
 	ChangeKind     = domain.ChangeKind
+	// DateBasis is what the moment of a batch is based on.
+	DateBasis = domain.DateBasis
+	// Completeness tells whether a batch contains all lots of its scope.
+	Completeness = domain.Completeness
+	// BatchScope is the part of a project a batch describes.
+	BatchScope = domain.BatchScope
 
 	// Field is an observed value: known, unknown (keeps the previous value) or absent.
 	Field[T comparable] = domain.Field[T]
@@ -94,6 +100,8 @@ type (
 	BatchResult      = app.BatchResult
 	ItemResult       = app.ItemResult
 	ItemError        = app.ItemError
+	// BatchError reports every item-level rule violation of one batch.
+	BatchError = app.BatchError
 )
 
 // Enumerations of the public contract.
@@ -121,6 +129,14 @@ const (
 
 	OriginManualEntry    = domain.OriginManualEntry
 	OriginDocumentImport = domain.OriginDocumentImport
+
+	BasisDocumentDate = domain.BasisDocumentDate
+	BasisReceivedDate = domain.BasisReceivedDate
+	BasisUploadTime   = domain.BasisUploadTime
+	BasisEntryTime    = domain.BasisEntryTime
+
+	CompletenessPartial  = domain.CompletenessPartial
+	CompletenessComplete = domain.CompletenessComplete
 
 	ChangeCreated   = domain.ChangeCreated
 	ChangeChanged   = domain.ChangeChanged

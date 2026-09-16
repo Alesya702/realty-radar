@@ -82,7 +82,10 @@ func FromLookup(lookup func(string) (string, bool)) (Config, error) {
 		errs = append(errs, fmt.Errorf("RR_LOG_FORMAT: unsupported value %q (expected text or json)", cfg.Log.Format))
 	}
 
-	cfg.HTTP.Addr = get("RR_HTTP_ADDR", ":8080")
+	// Local MVP: the server is bound to the loopback interface, so that an
+	// unauthenticated UI is not reachable from the network (A-02). A container
+	// or another environment sets RR_HTTP_ADDR explicitly.
+	cfg.HTTP.Addr = get("RR_HTTP_ADDR", "127.0.0.1:8080")
 	timeout, err := time.ParseDuration(get("RR_HTTP_SHUTDOWN_TIMEOUT", "10s"))
 	if err != nil || timeout <= 0 {
 		errs = append(errs, errors.New("RR_HTTP_SHUTDOWN_TIMEOUT: expected a positive duration such as 10s"))

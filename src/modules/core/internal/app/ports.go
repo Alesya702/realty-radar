@@ -42,9 +42,10 @@ type Store interface {
 
 	InsertLot(ctx context.Context, l domain.Lot) error
 	GetLot(ctx context.Context, id domain.ID) (domain.Lot, error)
-	// FindLotByPlacement returns a lot with exactly the same project, building,
-	// section, type and number (empty levels compare equal).
-	FindLotByPlacement(ctx context.Context, p domain.Placement) (*domain.Lot, error)
+	// ListLotsByNumber returns the lots of a project with the given lot type
+	// and number, whatever their building and section: the candidates of key
+	// K2 matching (domain.MatchPlacement).
+	ListLotsByNumber(ctx context.Context, projectID domain.ID, lotType domain.LotType, number string) ([]domain.Lot, error)
 	SetPrimaryListing(ctx context.Context, lotID, listingID domain.ID) error
 	ListLotRows(ctx context.Context, projectID domain.ID) ([]LotRow, error)
 

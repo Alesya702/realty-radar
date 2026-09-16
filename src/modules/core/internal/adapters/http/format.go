@@ -266,6 +266,12 @@ var fieldLabels = map[string]string{
 	"developer_id":          "Девелопер",
 	"lot":                   "Лот",
 	"at":                    "Дата и время",
+	"ref":                   "Ссылка элемента пакета",
+	"origin_kind":           "Способ поступления",
+	"origin_ref":            "Ссылка на импорт",
+	"observed_at_basis":     "Основание даты наблюдения",
+	"completeness":          "Полнота пакета",
+	"scope":                 "Область пакета",
 }
 
 var codeMessages = map[string]string{
@@ -280,7 +286,7 @@ var codeMessages = map[string]string{
 	domain.CodeDiscountNotGreater:   "Цена до скидки должна быть больше цены. Если скидка явно не указана источником, оставьте поле пустым.",
 	domain.CodeSectionWithoutBldg:   "Секция указывается только вместе с корпусом.",
 	domain.CodePlacementMismatch:    "Корпус или секция не относятся к этому проекту (поле «%s»).",
-	domain.CodeLotAlreadyExists:     "В проекте уже есть лот с таким типом, номером, корпусом и секцией. Откройте его карточку и добавьте наблюдение.",
+	domain.CodeLotAlreadyExists:     "В проекте уже есть лот с таким типом, номером и корпусом. Откройте его карточку и добавьте наблюдение.",
 	domain.CodeNameTaken:            "Объект с таким названием уже существует.",
 	domain.CodeCodeTaken:            "Источник с таким кодом уже существует.",
 	domain.CodeSelfRelation:         "Проект не может быть связан сам с собой.",
@@ -292,6 +298,11 @@ var codeMessages = map[string]string{
 	domain.CodeSourceInactive:       "Источник данных неактивен.",
 	domain.CodeSourceKeyConflict:    "Ключ источника уже относится к другому лоту.",
 	domain.CodeWrongProject:         "Объект относится к другому проекту (поле «%s»).",
+	domain.CodeDuplicateInBatch:     "Один и тот же объект описан в пакете дважды (поле «%s»).",
+	domain.CodeUnknownRef:           "Ссылка на объект пакета не найдена (поле «%s»).",
+	domain.CodeInvalidTarget:        "Укажите либо существующий объект, либо новый (поле «%s»).",
+	domain.CodeMatchConflict:        "В проекте есть лот с таким номером, для которого корпус указан иначе. Выберите лот явно или уточните корпус.",
+	domain.CodeOriginConflict:       "Пакет с той же ссылкой на источник уже принят с другим содержимым.",
 }
 
 func ruleMessage(re *domain.RuleError) string {

@@ -138,7 +138,7 @@ cp .env.example .env
 | `RR_ENV` | `local` | `local` / `test` / `production` |
 | `RR_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` |
 | `RR_LOG_FORMAT` | `text` | `text` / `json` |
-| `RR_HTTP_ADDR` | `:8080` | адрес HTTP-сервера |
+| `RR_HTTP_ADDR` | `127.0.0.1:8080` | адрес HTTP-сервера (по умолчанию только localhost) |
 | `RR_HTTP_SHUTDOWN_TIMEOUT` | `10s` | время на корректную остановку |
 | `RR_DATABASE_URL` | — (обязательна) | строка подключения PostgreSQL |
 | `RR_DATABASE_MAX_CONNS` | `10` | размер пула соединений |
