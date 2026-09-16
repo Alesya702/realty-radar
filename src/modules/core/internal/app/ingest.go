@@ -1,8 +1,12 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io"
+	"strings"
 	"time"
 
 	"realtyradar/src/modules/core/internal/domain"
@@ -13,17 +17,29 @@ import (
 // moment. It is used by manual entry now and by PDF import next.
 //
 // Deliberately deferred from the target contract (core-domain-model.md 9.4):
-// observed_at basis, scope and completeness (no delisting by absence),
-// resolve_by_source_key targets, placement updates of existing lots, and
-// batch correction.
+// complete batches (no delisting by absence), resolve_by_source_key targets,
+// placement updates of existing lots, and batch correction.
 type ObservationBatch struct {
 	DataSourceID domain.ID
 	OriginKind   domain.OriginKind
 	// OriginRef identifies the confirmed import or entry in the sending module.
-	// A repeated batch with the same OriginKind and OriginRef is not applied again.
+	// A repeated batch with the same OriginKind and OriginRef is not applied
+	// again; the same OriginRef with different content is refused.
 	OriginRef  *domain.ID
 	ObservedAt time.Time
-	ProjectID  domain.ID
+	// ObservedAtBasis is what ObservedAt is based on (document date, upload
+	// time, ...). Manual entry may leave it empty (entry_time); a document
+	// import must state it.
+	ObservedAtBasis domain.DateBasis
+	// Scope is the part of the project the batch describes (empty: the whole
+	// project, all lot types).
+	Scope domain.BatchScope
+	// Completeness tells whether the batch contains all lots of its scope.
+	// Only partial is supported by the MVP.
+	Completeness domain.Completeness
+	// ConfirmedAt is when the user confirmed the batch in the sending module.
+	ConfirmedAt *time.Time
+	ProjectID   domain.ID
 	// Buildings and Sections declare the structure the items refer to: an
 	// existing object or a new one confirmed by the user.
 	Buildings []BuildingDecision
@@ -102,24 +118,72 @@ type ItemError struct {
 func (e *ItemError) Error() string { return fmt.Sprintf("item %q: %v", e.Ref, e.Err) }
 func (e *ItemError) Unwrap() error { return e.Err }
 
+// BatchError reports every item of a batch that violates a rule. The batch was
+// not applied: the transaction is rolled back, so nothing of it is written.
+//
+// Structural errors of the batch (header, data source, building and section
+// decisions) are reported separately, as a rule error or a single ItemError.
+type BatchError struct {
+	Items []ItemError
+}
+
+func (e *BatchError) Error() string {
+	parts := make([]string, 0, len(e.Items))
+	for i := range e.Items {
+		parts = append(parts, e.Items[i].Error())
+	}
+	return fmt.Sprintf("batch rejected, %d item(s): %s", len(e.Items), strings.Join(parts, "; "))
+}
+
+// Unwrap returns the first item error, so that callers of a single-item batch
+// (the manual entry forms) can inspect the rule as before.
+func (e *BatchError) Unwrap() error {
+	if len(e.Items) == 0 {
+		return nil
+	}
+	return &e.Items[0]
+}
+
 // IngestObservationBatch applies a batch atomically: either all items are
-// applied or none.
+// applied or none. When items violate rules, every violation is reported at
+// once as a *BatchError and nothing is written.
 func (s *Service) IngestObservationBatch(ctx context.Context, in ObservationBatch) (BatchResult, error) {
 	now := s.clock()
 	observedAt := domain.NormalizeTime(in.ObservedAt)
-	batch, err := domain.NewIngestionBatch(s.newID(), in.DataSourceID, in.OriginKind, in.OriginRef, observedAt, now)
+	header := domain.BatchHeader{
+		DataSourceID:    in.DataSourceID,
+		OriginKind:      in.OriginKind,
+		OriginRef:       in.OriginRef,
+		ObservedAt:      observedAt,
+		ObservedAtBasis: in.ObservedAtBasis,
+		Scope:           in.Scope,
+		Completeness:    in.Completeness,
+		ConfirmedAt:     in.ConfirmedAt,
+		ContentHash:     in.contentHash(),
+	}
+	batch, err := domain.NewIngestionBatch(s.newID(), header, now)
 	if err != nil {
 		return BatchResult{}, err
 	}
 
 	var result BatchResult
 	err = s.repo.InTx(ctx, func(st Store) error {
+		// The project lock serializes batches of one project. The idempotency
+		// check follows it: two confirmations of the same import would
+		// otherwise both find no batch and both try to insert one.
+		if err := st.LockProject(ctx, in.ProjectID); err != nil {
+			return fmt.Errorf("ingest: project %s: %w", in.ProjectID, err)
+		}
 		if in.OriginRef != nil {
 			prev, err := st.FindBatchByOrigin(ctx, in.OriginKind, *in.OriginRef)
 			if err != nil {
 				return fmt.Errorf("ingest: find batch: %w", err)
 			}
 			if prev != nil {
+				if len(prev.ContentHash) > 0 && !bytes.Equal(prev.ContentHash, batch.ContentHash) {
+					return &domain.RuleError{Code: domain.CodeOriginConflict, Field: "origin_ref",
+						Detail: "batch " + prev.ID.String() + " with the same origin was applied with different content"}
+				}
 				result = BatchResult{BatchID: prev.ID, AlreadyApplied: true}
 				return nil
 			}
@@ -131,32 +195,127 @@ func (s *Service) IngestObservationBatch(ctx context.Context, in ObservationBatc
 		if !src.IsActive {
 			return &domain.RuleError{Code: domain.CodeSourceInactive, Field: "data_source", Detail: "data source " + src.Code + " is inactive"}
 		}
-		if err := st.LockProject(ctx, in.ProjectID); err != nil {
-			return fmt.Errorf("ingest: project %s: %w", in.ProjectID, err)
+		if id := in.Scope.BuildingID; id != nil {
+			b, err := st.GetBuilding(ctx, *id)
+			if err != nil {
+				return fmt.Errorf("ingest: scope building %s: %w", id, err)
+			}
+			if b.ProjectID != in.ProjectID {
+				return &domain.RuleError{Code: domain.CodeWrongProject, Field: "scope", Detail: "the scope building belongs to another project"}
+			}
 		}
 		if err := st.InsertBatch(ctx, batch); err != nil {
 			return fmt.Errorf("ingest: insert batch: %w", err)
 		}
 
 		ing := &ingestion{svc: s, st: st, batch: batch, projectID: in.ProjectID, now: now,
-			buildings: map[string]domain.Building{}, sections: map[string]domain.Section{}, seenLots: map[domain.ID]string{}}
+			buildings: map[string]domain.Building{}, sections: map[string]domain.Section{},
+			seenLots: map[domain.ID]string{}, seenPlacements: map[string]string{}}
 		if err := ing.resolveStructure(ctx, in); err != nil {
 			return err
 		}
-		result = BatchResult{BatchID: batch.ID, Items: make([]ItemResult, 0, len(in.Items))}
+		items := make([]ItemResult, 0, len(in.Items))
+		var itemErrs []ItemError
 		for _, item := range in.Items {
 			r, err := ing.apply(ctx, item)
-			if err != nil {
+			if err == nil {
+				items = append(items, r)
+				continue
+			}
+			if _, isRule := domain.AsRuleError(err); !isRule {
+				// Not a rule violation: the transaction may be unusable, and
+				// checking the remaining items would report noise.
 				return &ItemError{Ref: item.Ref, Err: err}
 			}
-			result.Items = append(result.Items, r)
+			itemErrs = append(itemErrs, ItemError{Ref: item.Ref, Err: err})
 		}
+		if len(itemErrs) > 0 {
+			// Rolls back everything written by this batch.
+			return &BatchError{Items: itemErrs}
+		}
+		result = BatchResult{BatchID: batch.ID, Items: items}
 		return nil
 	})
 	if err != nil {
 		return BatchResult{}, err
 	}
 	return result, nil
+}
+
+// contentHash is a stable digest of what the batch states. It does not cover
+// OriginRef (the identity of the batch) or ConfirmedAt (when the user pressed
+// the button), so that a repeat of the same import is recognized while the
+// same origin with changed data is not.
+func (in ObservationBatch) contentHash() []byte {
+	h := sha256.New()
+	w := func(format string, args ...any) { fmt.Fprintf(h, format, args...) }
+	w("core.batch.v1\n")
+	w("data_source=%s\n", in.DataSourceID)
+	w("origin_kind=%s\n", in.OriginKind)
+	w("project=%s\n", in.ProjectID)
+	w("observed_at=%d\n", domain.NormalizeTime(in.ObservedAt).UnixMicro())
+	w("observed_at_basis=%s\n", in.ObservedAtBasis)
+	w("completeness=%s\n", in.Completeness)
+	w("scope_building=%s\n", idText(in.Scope.BuildingID))
+	for _, t := range in.Scope.LotTypes {
+		w("scope_lot_type=%s\n", t)
+	}
+	for _, b := range in.Buildings {
+		w("building=%s|%s|%s\n", b.Ref, idText(b.ExistingID), b.NewName)
+	}
+	for _, sec := range in.Sections {
+		w("section=%s|%s|%s|%s\n", sec.Ref, idText(sec.ExistingID), sec.BuildingRef, sec.NewName)
+	}
+	for _, item := range in.Items {
+		w("item=%s\n", item.Ref)
+		w("  existing=%s\n", idText(item.Target.ExistingLotID))
+		if np := item.Target.NewLot; np != nil {
+			w("  new=%s|%s|%s|%s|%s\n", np.BuildingRef, np.SectionRef, np.Type, np.Number, intText(np.Floor))
+		}
+		w("  source_key=%s\n", textOf(item.SourceKey))
+		w("  source_url=%s\n", textOf(item.SourceURL))
+		w("  published_at=%s\n", timeText(item.PublishedAt))
+		w("  presence=%s\n", item.State.Presence)
+		hashField(h, "status", item.State.Status)
+		hashField(h, "rooms", item.State.Rooms)
+		hashField(h, "area_total", item.State.AreaTotal)
+		hashField(h, "price", item.State.Price)
+		hashField(h, "price_before_discount", item.State.PriceBeforeDiscount)
+		hashField(h, "finish", item.State.Finish)
+	}
+	return h.Sum(nil)
+}
+
+func hashField[T comparable](w io.Writer, name string, f domain.Field[T]) {
+	fmt.Fprintf(w, "  %s=%d:%v\n", name, f.State, f.Value)
+}
+
+func idText(id *domain.ID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
+}
+
+func intText(v *int) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprint(*v)
+}
+
+func textOf(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func timeText(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return domain.NormalizeTime(*t).Format(time.RFC3339Nano)
 }
 
 type ingestion struct {
@@ -167,7 +326,11 @@ type ingestion struct {
 	now       time.Time
 	buildings map[string]domain.Building
 	sections  map[string]domain.Section
-	seenLots  map[domain.ID]string
+	// seenLots and seenPlacements detect items of one batch that describe the
+	// same lot: by lot id for resolved lots, by placement for new lots (the
+	// lot id does not exist yet when the duplicate has to be reported).
+	seenLots       map[domain.ID]string
+	seenPlacements map[string]string
 }
 
 func (ing *ingestion) resolveStructure(ctx context.Context, in ObservationBatch) error {
@@ -234,7 +397,7 @@ func (ing *ingestion) hasRef(ref string) bool {
 }
 
 func (ing *ingestion) apply(ctx context.Context, item LotObservation) (ItemResult, error) {
-	lot, isNew, err := ing.resolveLot(ctx, item.Target)
+	lot, isNew, err := ing.resolveLot(ctx, item)
 	if err != nil {
 		return ItemResult{}, err
 	}
@@ -288,7 +451,8 @@ func (ing *ingestion) apply(ctx context.Context, item LotObservation) (ItemResul
 	return res, nil
 }
 
-func (ing *ingestion) resolveLot(ctx context.Context, target LotTarget) (domain.Lot, bool, error) {
+func (ing *ingestion) resolveLot(ctx context.Context, item LotObservation) (domain.Lot, bool, error) {
+	target := item.Target
 	switch {
 	case target.ExistingLotID != nil && target.NewLot == nil:
 		lot, err := ing.st.GetLot(ctx, *target.ExistingLotID)
@@ -300,14 +464,14 @@ func (ing *ingestion) resolveLot(ctx context.Context, target LotTarget) (domain.
 		}
 		return lot, false, nil
 	case target.ExistingLotID == nil && target.NewLot != nil:
-		lot, err := ing.createLot(ctx, *target.NewLot)
+		lot, err := ing.createLot(ctx, item.Ref, *target.NewLot)
 		return lot, true, err
 	default:
 		return domain.Lot{}, false, &domain.RuleError{Code: domain.CodeInvalidTarget, Field: "lot", Detail: "set either an existing lot or a new lot placement"}
 	}
 }
 
-func (ing *ingestion) createLot(ctx context.Context, np NewLotPlacement) (domain.Lot, error) {
+func (ing *ingestion) createLot(ctx context.Context, ref string, np NewLotPlacement) (domain.Lot, error) {
 	p := domain.Placement{ProjectID: ing.projectID, Type: np.Type, Number: np.Number, Floor: np.Floor}
 	var building *domain.Building
 	var section *domain.Section
@@ -329,19 +493,33 @@ func (ing *ingestion) createLot(ctx context.Context, np NewLotPlacement) (domain
 	if err != nil {
 		return domain.Lot{}, err
 	}
-	// No fuzzy matching: only an exact duplicate of the placement is refused,
-	// so that a confirmed "new lot" decision cannot silently duplicate a lot.
-	dup, err := ing.st.FindLotByPlacement(ctx, lot.Placement)
-	if err != nil {
-		return domain.Lot{}, fmt.Errorf("check lot placement: %w", err)
+	// Two items describing the same new lot are a duplicate inside the batch,
+	// not a collision with a stored lot: the check precedes the insert.
+	key := placementKey(lot.Placement)
+	if prevRef, dup := ing.seenPlacements[key]; dup {
+		return domain.Lot{}, &domain.RuleError{Code: domain.CodeDuplicateInBatch, Field: "lot",
+			Detail: "the same new lot is already described by item " + prevRef}
 	}
-	if dup != nil {
-		return domain.Lot{}, &domain.RuleError{Code: domain.CodeLotAlreadyExists, Field: "number", Detail: "a lot with the same placement already exists: " + dup.ID.String()}
+	// Matching against stored lots follows key K2 (project, building, lot type,
+	// number); the rule itself lives in the domain.
+	candidates, err := ing.st.ListLotsByNumber(ctx, ing.projectID, lot.Placement.Type, lot.Placement.Number)
+	if err != nil {
+		return domain.Lot{}, fmt.Errorf("find lots by number: %w", err)
+	}
+	if err := domain.CheckNewLotPlacement(lot.Placement, candidates); err != nil {
+		return domain.Lot{}, err
 	}
 	if err := ing.st.InsertLot(ctx, lot); err != nil {
 		return domain.Lot{}, fmt.Errorf("insert lot: %w", err)
 	}
+	ing.seenPlacements[key] = ref
 	return lot, nil
+}
+
+// placementKey is the K2 identity of a placement inside one batch: project,
+// building, lot type and number. The section is not part of it.
+func placementKey(p domain.Placement) string {
+	return fmt.Sprintf("%s|%s|%s|%s", p.ProjectID, idText(p.BuildingID), p.Type, p.Number)
 }
 
 func (ing *ingestion) resolveListing(ctx context.Context, lot domain.Lot, item LotObservation) (domain.Listing, error) {
@@ -387,7 +565,7 @@ func (ing *ingestion) resolveListing(ctx context.Context, lot domain.Lot, item L
 		listing.SourceURL = sourceURL
 	}
 	if item.PublishedAt != nil {
-		d := domain.DateOf(*item.PublishedAt)
+		d := domain.BusinessDateOf(*item.PublishedAt)
 		listing.PublishedAt = &d
 	}
 	return listing, nil

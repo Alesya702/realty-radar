@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	_ "time/tzdata" // Europe/Moscow must be available on any OS
 
 	"realtyradar/src/modules/core/internal/app"
 	"realtyradar/src/modules/core/internal/domain"
@@ -24,10 +23,8 @@ import (
 //go:embed templates
 var templateFS embed.FS
 
-// businessLocation is the time zone of business dates and UI times (A-07).
-const businessLocation = "Europe/Moscow"
-
-// Handler serves the Core pages.
+// Handler serves the Core pages. The business time zone (A-07) is the
+// domain's: the adapter only formats and parses user input in it.
 type Handler struct {
 	svc    *app.Service
 	logger *slog.Logger
@@ -48,11 +45,7 @@ func Nav() []web.Link {
 
 // New creates the handler. nav is the shell navigation shown on every page.
 func New(svc *app.Service, logger *slog.Logger, nav []web.Link) (*Handler, error) {
-	loc, err := time.LoadLocation(businessLocation)
-	if err != nil {
-		return nil, fmt.Errorf("load time zone %s: %w", businessLocation, err)
-	}
-	h := &Handler{svc: svc, logger: logger, loc: loc, now: time.Now}
+	h := &Handler{svc: svc, logger: logger, loc: domain.BusinessLocation(), now: time.Now}
 	pages, err := fs.Sub(templateFS, "templates")
 	if err != nil {
 		return nil, err
@@ -134,8 +127,9 @@ func redirect(w http.ResponseWriter, r *http.Request, target string) {
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-// today returns the current business date.
-func (h *Handler) today() time.Time { return domain.DateOf(h.now().In(h.loc)) }
+// today returns the current business date. The rule lives in the domain, so a
+// caller passing a UTC moment gets the same date as the UI (review M6).
+func (h *Handler) today() time.Time { return domain.BusinessDateOf(h.now()) }
 
 // ---- form parsing ------------------------------------------------------------
 

@@ -393,7 +393,10 @@ func (h *Handler) parseBatchHeader(r *http.Request, projectID domain.ID) (app.Ob
 		DataSourceID: sourceID,
 		OriginKind:   domain.OriginManualEntry,
 		ObservedAt:   observedAt,
-		ProjectID:    projectID,
+		// The user states the moment the values were seen in the source.
+		ObservedAtBasis: domain.BasisEntryTime,
+		Completeness:    domain.CompletenessPartial,
+		ProjectID:       projectID,
 	}, nil
 }
 

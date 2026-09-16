@@ -1,6 +1,7 @@
 package httpadapter
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -43,18 +44,22 @@ func TestRuleMessage(t *testing.T) {
 	if msg := ruleMessage(&domain.RuleError{Code: "something_new", Detail: "x"}); !strings.HasPrefix(msg, "Некорректные данные") {
 		t.Errorf("unknown code message = %q", msg)
 	}
-	// Every rule code produced by the domain has a user message.
-	for _, code := range []string{
-		domain.CodeRequired, domain.CodeTooLong, domain.CodeInvalidValue, domain.CodeInvalidNumber,
-		domain.CodeMustBePositive, domain.CodeMustNotBeNegative, domain.CodeOutOfRange,
-		domain.CodeDiscountWithoutPrice, domain.CodeDiscountNotGreater, domain.CodeSectionWithoutBldg,
-		domain.CodePlacementMismatch, domain.CodeLotAlreadyExists, domain.CodeNameTaken, domain.CodeCodeTaken,
-		domain.CodeSelfRelation, domain.CodePeriodOrder, domain.CodePeriodOverlap, domain.CodeObservationInFuture,
-		domain.CodeObservationOutOfOrdr, domain.CodeHistoryConflict, domain.CodeSourceInactive,
-		domain.CodeSourceKeyConflict, domain.CodeWrongProject,
-	} {
+	// Every rule code the domain can produce has a user message. The list
+	// comes from the domain (domain.RuleCodes), not from this test, so that a
+	// new code without a message fails the build instead of reaching the user
+	// as "Некорректные данные: <code>".
+	for _, code := range domain.RuleCodes {
 		if _, ok := codeMessages[code]; !ok {
 			t.Errorf("no user message for rule code %q", code)
+		}
+		msg := ruleMessage(&domain.RuleError{Code: code, Field: "number", Detail: "x"})
+		if strings.HasPrefix(msg, "Некорректные данные") || strings.Contains(msg, "%!") {
+			t.Errorf("rule code %q renders as %q", code, msg)
+		}
+	}
+	for code := range codeMessages {
+		if !slices.Contains(domain.RuleCodes, code) {
+			t.Errorf("message for unknown rule code %q", code)
 		}
 	}
 }

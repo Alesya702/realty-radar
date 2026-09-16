@@ -376,12 +376,13 @@ func TestCorePriceValidation(t *testing.T) {
 
 func TestCoreBatchIdempotency(t *testing.T) {
 	ctx := context.Background()
-	m, _ := newCore(t)
+	m, pool := newCore(t)
 	src := manualSource(t, m)
 	p := newProject(t, m)
-	ref, _ := core.ParseID("01a0a5df-0000-7000-8000-" + fmt.Sprintf("%012d", time.Now().UnixNano()%1_000_000_000_000))
+	ref := newOriginRef(t)
 	b := core.ObservationBatch{
-		DataSourceID: src.ID, OriginKind: core.OriginDocumentImport, OriginRef: &ref, ObservedAt: time.Now().Add(-time.Hour), ProjectID: p.ID,
+		DataSourceID: src.ID, OriginKind: core.OriginDocumentImport, OriginRef: &ref,
+		ObservedAt: time.Now().Add(-time.Hour), ObservedAtBasis: core.BasisDocumentDate, ProjectID: p.ID,
 		Items: []core.LotObservation{{Ref: "1", Target: core.LotTarget{NewLot: &core.NewLotPlacement{Type: core.LotTypeApartment, Number: "1"}}, State: apartmentState(1, 3000, 8_000_000)}},
 	}
 	first, err := m.IngestObservationBatch(ctx, b)
@@ -398,6 +399,75 @@ func TestCoreBatchIdempotency(t *testing.T) {
 	if rows, _ := m.ListLots(ctx, p.ID); len(rows) != 1 {
 		t.Errorf("repeated batch created lots: %d", len(rows))
 	}
+
+	// The batch header keeps the provenance of the observation (review M1).
+	var basis, completeness string
+	var hash []byte
+	var confirmed *time.Time
+	if err := pool.QueryRow(ctx, `SELECT observed_at_basis, completeness, content_hash, confirmed_at
+		FROM core.ingestion_batches WHERE id = $1`, first.BatchID.String()).Scan(&basis, &completeness, &hash, &confirmed); err != nil {
+		t.Fatal(err)
+	}
+	if basis != "document_date" || completeness != "partial" || len(hash) != 32 || confirmed != nil {
+		t.Errorf("batch header: basis=%q completeness=%q hash=%d bytes confirmed=%v", basis, completeness, len(hash), confirmed)
+	}
+
+	// The same origin reference with different content is a conflict, not a repeat.
+	changed := b
+	changed.Items = []core.LotObservation{{Ref: "1", Target: core.LotTarget{NewLot: &core.NewLotPlacement{Type: core.LotTypeApartment, Number: "1"}},
+		State: apartmentState(1, 3000, 9_500_000)}}
+	_, err = m.IngestObservationBatch(ctx, changed)
+	mustRule(t, err, "origin_conflict")
+	if rows, _ := m.ListLots(ctx, p.ID); len(rows) != 1 {
+		t.Errorf("refused batch created lots: %d", len(rows))
+	}
+
+	// A different origin reference is a different batch.
+	other := b
+	otherRef := newOriginRef(t)
+	other.OriginRef = &otherRef
+	other.Items = []core.LotObservation{{Ref: "5", Target: core.LotTarget{NewLot: &core.NewLotPlacement{Type: core.LotTypeApartment, Number: "5"}},
+		State: apartmentState(1, 3000, 8_000_000)}}
+	second, err := m.IngestObservationBatch(ctx, other)
+	if err != nil || second.AlreadyApplied || second.BatchID == first.BatchID {
+		t.Fatalf("second import: %+v, %v", second, err)
+	}
+
+	// A document import must state what its moment is based on.
+	noBasis := b
+	noBasis.OriginRef, noBasis.ObservedAtBasis = nil, ""
+	_, err = m.IngestObservationBatch(ctx, noBasis)
+	mustRule(t, err, "required")
+
+	// Confirmation and scope reach the stored header.
+	confirmedAt := time.Now().Add(-time.Minute)
+	scopedRef := newOriginRef(t)
+	scoped := b
+	scoped.OriginRef, scoped.ConfirmedAt = &scopedRef, &confirmedAt
+	scoped.Scope = core.BatchScope{LotTypes: []core.LotType{core.LotTypeApartment}}
+	scoped.Items = []core.LotObservation{{Ref: "2", Target: core.LotTarget{NewLot: &core.NewLotPlacement{Type: core.LotTypeApartment, Number: "2"}}, State: apartmentState(1, 3000, 8_000_000)}}
+	res, err := m.IngestObservationBatch(ctx, scoped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lotTypes []string
+	if err := pool.QueryRow(ctx, `SELECT scope_lot_types, confirmed_at FROM core.ingestion_batches WHERE id = $1`,
+		res.BatchID.String()).Scan(&lotTypes, &confirmed); err != nil {
+		t.Fatal(err)
+	}
+	if len(lotTypes) != 1 || lotTypes[0] != "apartment" || confirmed == nil || !confirmed.Equal(confirmedAt.UTC().Truncate(time.Microsecond)) {
+		t.Errorf("scope = %v, confirmed_at = %v", lotTypes, confirmed)
+	}
+}
+
+// newOriginRef returns an identifier of an import in a sending module.
+func newOriginRef(t *testing.T) core.ID {
+	t.Helper()
+	id, err := core.ParseID(fmt.Sprintf("01a0a5df-0000-7000-8000-%012d", time.Now().UnixNano()%1_000_000_000_000))
+	if err != nil {
+		t.Fatalf("origin ref: %v", err)
+	}
+	return id
 }
 
 func TestCoreRelationsAndPortfolio(t *testing.T) {

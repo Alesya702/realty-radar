@@ -13,7 +13,8 @@ services:
       POSTGRES_PASSWORD: realtyradar
       POSTGRES_DB: realtyradar
     ports:
-      - "5432:5432"
+      # published on the loopback interface only: the MVP has no authentication (A-02)
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -30,10 +31,12 @@ services:
       dockerfile: docker/app.Dockerfile
     environment:
       RR_ENV: local
+      # inside the container the server listens on all interfaces; the port is
+      # published on the host loopback only (see ports below)
       RR_HTTP_ADDR: ":8080"
       RR_DATABASE_URL: postgres://realtyradar:realtyradar@postgres:5432/realtyradar?sslmode=disable
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
