@@ -137,6 +137,7 @@ type projectPage struct {
 	Buildings     []app.BuildingView
 	Lots          []app.LotRow
 	Relations     []app.RelationView
+	Incoming      []app.IncomingRelationView
 	Memberships   []domain.PortfolioMembership
 	InPortfolio   bool
 	OtherProjects []app.ProjectSummary
@@ -181,6 +182,9 @@ func (h *Handler) loadProjectPage(ctx context.Context, id domain.ID) (projectPag
 		return page, err
 	}
 	if page.Relations, err = h.svc.ListProjectRelations(ctx, id, today); err != nil {
+		return page, err
+	}
+	if page.Incoming, err = h.svc.ListIncomingProjectRelations(ctx, id, today); err != nil {
 		return page, err
 	}
 	if page.Memberships, err = h.svc.ListPortfolioMemberships(ctx, id); err != nil {
@@ -235,6 +239,19 @@ func (h *Handler) projectAction(w http.ResponseWriter, r *http.Request, form str
 		target = "/projects/" + id.String()
 	}
 	redirect(w, r, target)
+}
+
+func (h *Handler) editProject(w http.ResponseWriter, r *http.Request) {
+	h.projectAction(w, r, "project_edit", func(id domain.ID) (string, error) {
+		developerID, err := parseOptionalID(r, "developer_id")
+		if err != nil {
+			return "", err
+		}
+		_, err = h.svc.UpdateProject(r.Context(), app.UpdateProjectInput{
+			ProjectID: id, Name: formText(r, "name"), DeveloperID: developerID, City: formText(r, "city"),
+		})
+		return "", err
+	})
 }
 
 func (h *Handler) setDeveloper(w http.ResponseWriter, r *http.Request) {
@@ -352,7 +369,8 @@ func (h *Handler) addLot(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return "", err
 		}
-		batch.Items = []app.LotObservation{{Ref: "lot", Target: app.LotTarget{NewLot: placement}, State: state, SourceURL: optionalString(formText(r, "source_url"))}}
+		batch.Items = []app.LotObservation{{Ref: "lot", Target: app.LotTarget{NewLot: placement}, State: state,
+			SourceKey: optionalString(formText(r, "source_key")), SourceURL: optionalString(formText(r, "source_url"))}}
 		res, err := h.svc.IngestObservationBatch(r.Context(), batch)
 		if err != nil {
 			return "", unwrapItemError(err)
@@ -498,7 +516,7 @@ func (h *Handler) renderLot(w http.ResponseWriter, r *http.Request, id domain.ID
 		return
 	}
 	page.ManualSource = manualSourceID(page.Sources)
-	title := "Лот " + hist.Lot.Placement.Number
+	title := "Лот " + lotNumberLabel(hist.Lot.Placement.Number)
 	h.render(w, status, "lot.html", title, page, errMsg)
 }
 
@@ -510,7 +528,7 @@ func changedFields(prev, cur domain.LotState) map[string]bool {
 		"status":                prev.Status != cur.Status,
 		"rooms":                 !equalPtr(prev.Rooms, cur.Rooms),
 		"area_total":            !equalPtr(prev.AreaTotal, cur.AreaTotal),
-		"price":                 !equalPtr(prev.Price, cur.Price),
+		"price":                 !equalPtr(prev.Price, cur.Price) || prev.PriceOnRequest != cur.PriceOnRequest,
 		"price_before_discount": !equalPtr(prev.PriceBeforeDiscount, cur.PriceBeforeDiscount),
 		"finish":                !equalPtr(prev.Finish, cur.Finish),
 	}

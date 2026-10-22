@@ -14,14 +14,18 @@
       <dt>Город</dt><dd>{{if $d.Project.City}}{{$d.Project.City}}{{else}}<span class="muted">—</span>{{end}}</dd>
       <dt>Создан</dt><dd>{{datetime $d.Project.CreatedAt}}</dd>
     </dl>
-    <form class="inline" method="post" action="/projects/{{$d.Project.ID}}/developer" style="margin-top:.8rem">
-      <label>Девелопер проекта
+    <h2 style="margin-top:.8rem">Изменить параметры</h2>
+    <form class="grid" method="post" action="/projects/{{$d.Project.ID}}/edit">
+      <label>Название ЖК*<input name="name" required maxlength="300" value="{{$form.Value "project_edit" "name" $d.Project.Name}}"></label>
+      <label>Город<input name="city" maxlength="300" value="{{$form.Value "project_edit" "city" $d.Project.City}}"></label>
+      {{$selDev := $form.Value "project_edit" "developer_id" (idp $d.Project.DeveloperID)}}
+      <label>Девелопер
         <select name="developer_id">
           <option value="">— не указан —</option>
-          {{range $d.Developers}}<option value="{{.ID}}" {{if eq (idp $d.Project.DeveloperID) (print .ID)}}selected{{end}}>{{.Name}}</option>{{end}}
+          {{range $d.Developers}}<option value="{{.ID}}" {{if eq $selDev (print .ID)}}selected{{end}}>{{.Name}}</option>{{end}}
         </select>
       </label>
-      <button class="secondary" type="submit">Сохранить</button>
+      <div><button class="secondary" type="submit">Сохранить</button></div>
     </form>
   </div>
 
@@ -64,6 +68,23 @@
     {{end}}</tbody>
   </table>
   {{else}}<p class="muted">Отношений пока нет.</p>{{end}}
+  <h2 style="margin-top:.8rem">Проект указан у других проектов</h2>
+  <p class="hint">Те же отношения с другой стороны: этот проект является конкурентом или референсом <em>для</em> указанных проектов.
+    Изменяются на карточке того проекта.</p>
+  {{if $d.Incoming}}
+  <table>
+    <thead><tr><th>Для проекта</th><th>Этот проект для него</th><th>Обоснование</th><th>Период</th><th></th></tr></thead>
+    <tbody>{{range $d.Incoming}}
+      <tr>
+        <td><a href="/projects/{{.SubjectProject.ID}}">{{.SubjectProject.Name}}</a></td>
+        <td>{{relationType .Relation.Type}}</td>
+        <td>{{.Relation.Rationale}}</td>
+        <td>{{date .Relation.ValidFrom}} — {{if .Relation.ValidTo}}{{datep .Relation.ValidTo}}{{else}}н. в.{{end}}</td>
+        <td>{{if .Active}}<span class="badge own">действует</span>{{else}}<span class="badge">не действует</span>{{end}}</td>
+      </tr>
+    {{end}}</tbody>
+  </table>
+  {{else}}<p class="muted">Другие проекты не указывают этот проект.</p>{{end}}
   {{if $d.OtherProjects}}
   <form class="grid" method="post" action="/projects/{{$d.Project.ID}}/relations" style="margin-top:.8rem">
     <label>Связанный проект*
@@ -118,13 +139,13 @@
       <tr>
         <td>{{if .BuildingName}}{{.BuildingName}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td>{{if .SectionName}}{{.SectionName}}{{else}}<span class="muted">—</span>{{end}}</td>
-        <td><a href="/lots/{{.Lot.ID}}">{{.Lot.Placement.Number}}</a></td>
+        <td><a href="/lots/{{.Lot.ID}}">{{if .Lot.Placement.Number}}{{.Lot.Placement.Number}}{{else}}<span class="muted">{{lotNumber ""}}</span>{{end}}</a></td>
         <td>{{lotType .Lot.Placement.Type}}</td>
         <td class="num">{{intp .Lot.Placement.Floor}}</td>
         {{with .Current}}
         <td class="num">{{intp .State.Rooms}}</td>
         <td class="num">{{area .State.AreaTotal}}</td>
-        <td class="num">{{money .State.Price}}</td>
+        <td class="num">{{price .State}}</td>
         <td class="num">{{money .State.PriceBeforeDiscount}}</td>
         <td class="num">{{money .State.PricePerSqm}}</td>
         <td>{{status .State.Status}}{{if eq (print .State.Presence) "delisted"}} <span class="badge">снят с публикации</span>{{end}}</td>
@@ -152,11 +173,12 @@
     <label>Тип*
       <select name="lot_type">{{range lotTypes}}<option value="{{.}}" {{if eq ($form.Value "lot" "lot_type" "apartment") (print .)}}selected{{end}}>{{lotType .}}</option>{{end}}</select>
     </label>
-    <label>Номер*<input name="number" required maxlength="50" value="{{$form.Value "lot" "number" ""}}"></label>
+    <label>Номер<input name="number" maxlength="50" placeholder="пусто — не указан" value="{{$form.Value "lot" "number" ""}}"></label>
     <label>Этаж<input name="floor" inputmode="numeric" value="{{$form.Value "lot" "floor" ""}}"></label>
     <label>Комнат<input name="rooms" inputmode="numeric" value="{{$form.Value "lot" "rooms" ""}}"></label>
     <label>Общая площадь, м²<input name="area_total" inputmode="decimal" placeholder="67,4" value="{{$form.Value "lot" "area_total" ""}}"></label>
     <label>Цена, ₽<input name="price" inputmode="decimal" placeholder="15 900 000" value="{{$form.Value "lot" "price" ""}}"></label>
+    <label style="flex-direction:row;align-items:center;gap:.4rem"><input type="checkbox" name="price_on_request" value="1" {{if $form.Value "lot" "price_on_request" ""}}checked{{end}}>Цена по запросу</label>
     <label>Цена до скидки, ₽<input name="price_before_discount" inputmode="decimal" value="{{$form.Value "lot" "price_before_discount" ""}}"></label>
     {{$selStatus := $form.Value "lot" "status" "available"}}
     <label>Статус
@@ -167,9 +189,12 @@
     <label>Источник*
       <select name="data_source_id">{{range $d.Sources}}{{if .IsActive}}<option value="{{.ID}}" {{if eq ($form.Value "lot" "data_source_id" $d.ManualSource) (print .ID)}}selected{{end}}>{{.Name}}</option>{{end}}{{end}}</select>
     </label>
+    <label>ID объявления в источнике<input name="source_key" maxlength="300" value="{{$form.Value "lot" "source_key" ""}}"></label>
     <label>URL источника<input name="source_url" type="url" value="{{$form.Value "lot" "source_url" ""}}"></label>
     <div><button type="submit">Добавить лот</button></div>
   </form>
-  <p class="hint">Цена — актуальная цена предложения на дату наблюдения. Цену до скидки указывайте только если скидка явно указана источником.</p>
+  <p class="hint">Цена — актуальная цена предложения на дату наблюдения; если источник цену не публикует, оставьте поле пустым
+    (с отметкой «Цена по запросу», если так указано источником). Цену до скидки указывайте только если скидка явно указана источником.
+    Номер можно не указывать: лоты без номера не объединяются между собой; ID объявления, если он есть, связывает лот с объявлением источника.</p>
 </div>
 {{end}}

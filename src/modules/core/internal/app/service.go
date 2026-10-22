@@ -93,6 +93,40 @@ func (s *Service) SetProjectDeveloper(ctx context.Context, projectID domain.ID, 
 	return s.repo.UpdateProjectDeveloper(ctx, projectID, developerID)
 }
 
+// UpdateProjectInput is the input of UpdateProject.
+type UpdateProjectInput struct {
+	ProjectID   domain.ID
+	Name        string
+	DeveloperID *domain.ID
+	City        string
+}
+
+// UpdateProject changes the name, city and developer of a project. The rules
+// are those of CreateProject.
+func (s *Service) UpdateProject(ctx context.Context, in UpdateProjectInput) (domain.Project, error) {
+	var p domain.Project
+	err := s.repo.InTx(ctx, func(st Store) error {
+		if err := st.LockProject(ctx, in.ProjectID); err != nil {
+			return fmt.Errorf("update project %s: %w", in.ProjectID, err)
+		}
+		current, err := st.GetProject(ctx, in.ProjectID)
+		if err != nil {
+			return fmt.Errorf("update project %s: %w", in.ProjectID, err)
+		}
+		p, err = domain.NewProject(current.ID, in.Name, in.DeveloperID, in.City, current.CreatedAt)
+		if err != nil {
+			return err
+		}
+		if in.DeveloperID != nil {
+			if _, err := st.GetDeveloper(ctx, *in.DeveloperID); err != nil {
+				return fmt.Errorf("update project %s: developer %s: %w", in.ProjectID, in.DeveloperID, err)
+			}
+		}
+		return st.UpdateProject(ctx, p)
+	})
+	return p, err
+}
+
 // GetProject returns a project.
 func (s *Service) GetProject(ctx context.Context, id domain.ID) (domain.Project, error) {
 	return s.repo.GetProject(ctx, id)
@@ -336,6 +370,35 @@ func (s *Service) ListProjectRelations(ctx context.Context, subjectID domain.ID,
 			return nil, fmt.Errorf("list relations: related project %s: %w", r.RelatedProjectID, err)
 		}
 		views = append(views, RelationView{Relation: r, RelatedProject: related, Active: r.ActiveOn(on)})
+	}
+	return views, nil
+}
+
+// IncomingRelationView is a relation in which the project is the related one,
+// with the subject project that names it.
+type IncomingRelationView struct {
+	Relation       domain.ProjectRelation
+	SubjectProject domain.Project
+	Active         bool
+}
+
+// ListIncomingProjectRelations returns the relations where the project is the
+// related one: the projects for which it is a competitor or a reference. The
+// relation stays directed; this is the same record seen from the other side,
+// no mirror relation is created (core-domain-model.md, 4.3).
+func (s *Service) ListIncomingProjectRelations(ctx context.Context, relatedID domain.ID, on time.Time) ([]IncomingRelationView, error) {
+	on = domain.BusinessDateOf(on)
+	relations, err := s.repo.ListRelationsByRelated(ctx, relatedID)
+	if err != nil {
+		return nil, fmt.Errorf("list incoming relations of project %s: %w", relatedID, err)
+	}
+	views := make([]IncomingRelationView, 0, len(relations))
+	for _, r := range relations {
+		subject, err := s.repo.GetProject(ctx, r.SubjectProjectID)
+		if err != nil {
+			return nil, fmt.Errorf("list incoming relations: subject project %s: %w", r.SubjectProjectID, err)
+		}
+		views = append(views, IncomingRelationView{Relation: r, SubjectProject: subject, Active: r.ActiveOn(on)})
 	}
 	return views, nil
 }

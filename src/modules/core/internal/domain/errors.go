@@ -48,6 +48,7 @@ const (
 	CodeOutOfRange           = "out_of_range"
 	CodeDiscountWithoutPrice = "price_before_discount_without_price"
 	CodeDiscountNotGreater   = "price_before_discount_not_greater"
+	CodePriceOnRequestPrice  = "price_on_request_with_price"
 	CodeSectionWithoutBldg   = "section_without_building"
 	CodePlacementMismatch    = "placement_mismatch"
 	CodeLotAlreadyExists     = "lot_already_exists"
@@ -82,6 +83,7 @@ var RuleCodes = []string{
 	CodeOutOfRange,
 	CodeDiscountWithoutPrice,
 	CodeDiscountNotGreater,
+	CodePriceOnRequestPrice,
 	CodeSectionWithoutBldg,
 	CodePlacementMismatch,
 	CodeLotAlreadyExists,

@@ -15,6 +15,8 @@ const emptyValue = "—"
 func (h *Handler) funcs() template.FuncMap {
 	return template.FuncMap{
 		"money":        formatMoney,
+		"price":        formatPrice,
+		"lotNumber":    lotNumberLabel,
 		"area":         formatArea,
 		"intp":         formatIntPtr,
 		"strp":         formatStrPtr,
@@ -58,6 +60,27 @@ func formatMoney(m *domain.Money) string {
 		out = "−" + out
 	}
 	return out + " ₽"
+}
+
+// formatPrice renders the price of a lot state. A missing price is shown as
+// stated by the source: "Цена по запросу" or "Не указана", never as an amount.
+func formatPrice(s domain.LotState) string {
+	switch {
+	case s.Price != nil:
+		return formatMoney(s.Price)
+	case s.PriceOnRequest:
+		return "Цена по запросу"
+	}
+	return "Не указана"
+}
+
+// lotNumberLabel renders a lot number. "Не указан" is display text only: the
+// lot has no number.
+func lotNumberLabel(number string) string {
+	if number == "" {
+		return "Не указан"
+	}
+	return number
 }
 
 func formatArea(a *domain.Area) string {
@@ -242,6 +265,7 @@ var fieldLabels = map[string]string{
 	"area_total":            "Общая площадь",
 	"price":                 "Цена",
 	"price_before_discount": "Цена до скидки",
+	"price_on_request":      "Цена по запросу",
 	"status":                "Статус",
 	"presence":              "Присутствие в предложении",
 	"finish":                "Отделка",
@@ -284,6 +308,7 @@ var codeMessages = map[string]string{
 	domain.CodeOutOfRange:           "Поле «%s» вне допустимого диапазона.",
 	domain.CodeDiscountWithoutPrice: "Цена до скидки указывается только вместе с ценой.",
 	domain.CodeDiscountNotGreater:   "Цена до скидки должна быть больше цены. Если скидка явно не указана источником, оставьте поле пустым.",
+	domain.CodePriceOnRequestPrice:  "Отметка «Цена по запросу» исключает цену: оставьте цену пустой или снимите отметку.",
 	domain.CodeSectionWithoutBldg:   "Секция указывается только вместе с корпусом.",
 	domain.CodePlacementMismatch:    "Корпус или секция не относятся к этому проекту (поле «%s»).",
 	domain.CodeLotAlreadyExists:     "В проекте уже есть лот с таким типом, номером и корпусом. Откройте его карточку и добавьте наблюдение.",

@@ -239,6 +239,15 @@ func (s *store) UpdateProjectDeveloper(ctx context.Context, projectID domain.ID,
 	return requireAffected(tag, "project", projectID)
 }
 
+func (s *store) UpdateProject(ctx context.Context, p domain.Project) error {
+	tag, err := s.q.Exec(ctx, `UPDATE core.projects SET name = $2, city = $3, developer_id = $4, updated_at = now() WHERE id = $1`,
+		uuidArg(p.ID), p.Name, optionalTextArg(p.City), nullUUIDArg(p.DeveloperID))
+	if err != nil {
+		return fmt.Errorf("update project %s: %w", p.ID, err)
+	}
+	return requireAffected(tag, "project", p.ID)
+}
+
 const projectColumns = `p.id, p.developer_id, p.name, COALESCE(p.city, ''), p.created_at`
 
 func scanProject(row pgx.Row, extra ...any) (domain.Project, error) {

@@ -33,6 +33,24 @@ func TestFormatMoneyAndArea(t *testing.T) {
 	}
 }
 
+func TestFormatPriceAndLotNumber(t *testing.T) {
+	price := domain.Money(1590000000)
+	tests := []struct {
+		got, want string
+	}{
+		{formatPrice(domain.LotState{Price: &price}), formatMoney(&price)},
+		{formatPrice(domain.LotState{PriceOnRequest: true}), "Цена по запросу"},
+		{formatPrice(domain.LotState{}), "Не указана"},
+		{lotNumberLabel("145"), "145"},
+		{lotNumberLabel(""), "Не указан"},
+	}
+	for _, tt := range tests {
+		if tt.got != tt.want {
+			t.Errorf("got %q, want %q", tt.got, tt.want)
+		}
+	}
+}
+
 func TestRuleMessage(t *testing.T) {
 	msg := ruleMessage(&domain.RuleError{Code: domain.CodeRequired, Field: "number"})
 	if msg != "Заполните поле «Номер»." {

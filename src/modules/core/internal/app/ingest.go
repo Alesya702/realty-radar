@@ -280,6 +280,11 @@ func (in ObservationBatch) contentHash() []byte {
 		hashField(h, "rooms", item.State.Rooms)
 		hashField(h, "area_total", item.State.AreaTotal)
 		hashField(h, "price", item.State.Price)
+		// Written only when stated, so that the digests of batches that do not
+		// state it stay as they were before the field existed.
+		if item.State.PriceOnRequest.State != domain.FieldUnknown {
+			hashField(h, "price_on_request", item.State.PriceOnRequest)
+		}
 		hashField(h, "price_before_discount", item.State.PriceBeforeDiscount)
 		hashField(h, "finish", item.State.Finish)
 	}
@@ -492,6 +497,15 @@ func (ing *ingestion) createLot(ctx context.Context, ref string, np NewLotPlacem
 	lot, err := domain.NewLot(ing.svc.newID(), p, building, section, ing.now)
 	if err != nil {
 		return domain.Lot{}, err
+	}
+	// A lot without a number has no K2 key: it is neither a duplicate of another
+	// item nor a match of a stored lot by placement, so it is always a new lot.
+	// Its listing is still checked by source key (K1) in resolveListing.
+	if lot.Placement.Number == "" {
+		if err := ing.st.InsertLot(ctx, lot); err != nil {
+			return domain.Lot{}, fmt.Errorf("insert lot: %w", err)
+		}
+		return lot, nil
 	}
 	// Two items describing the same new lot are a duplicate inside the batch,
 	// not a collision with a stored lot: the check precedes the insert.

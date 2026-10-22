@@ -62,6 +62,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /projects", h.projects)
 	mux.HandleFunc("POST /projects", h.createProject)
 	mux.HandleFunc("GET /projects/{id}", h.project)
+	mux.HandleFunc("POST /projects/{id}/edit", h.editProject)
 	mux.HandleFunc("POST /projects/{id}/developer", h.setDeveloper)
 	mux.HandleFunc("POST /projects/{id}/buildings", h.addBuilding)
 	mux.HandleFunc("POST /projects/{id}/sections", h.addSection)
@@ -249,6 +250,8 @@ func parseObservedState(r *http.Request) (domain.ObservedState, error) {
 	if st.Price, err = observedField(r, "price", domain.ParseMoney); err != nil {
 		return st, err
 	}
+	// A checkbox: the form always states it, an unchecked box clears it.
+	st.PriceOnRequest = domain.Value(formText(r, "price_on_request") != "")
 	if st.PriceBeforeDiscount, err = observedField(r, "price_before_discount", domain.ParseMoney); err != nil {
 		return st, err
 	}

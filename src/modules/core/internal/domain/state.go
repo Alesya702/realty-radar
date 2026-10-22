@@ -48,6 +48,9 @@ const maxFinishLength = 200
 
 // LotState is the versioned state of a lot in one source. Nil pointers mean
 // "no value". Price is the current offer price at the moment of observation;
+// it is optional and never replaced by a placeholder amount. PriceOnRequest
+// tells that the source publishes no price and offers it on request ("Цена по
+// запросу"); without it a missing price is simply not stated.
 // PriceBeforeDiscount is the base price before an explicitly stated discount
 // (Q-CORE-15). Discount size and price per m² are calculated, not stored.
 type LotState struct {
@@ -56,6 +59,7 @@ type LotState struct {
 	Rooms               *int
 	AreaTotal           *Area
 	Price               *Money
+	PriceOnRequest      bool
 	PriceBeforeDiscount *Money
 	// Finish is the finishing as stated by the source, free text until the
 	// finishing dictionary is defined (Q-CORE-08, A-21).
@@ -81,6 +85,9 @@ func (s LotState) Validate() error {
 	}
 	if s.Price != nil && *s.Price <= 0 {
 		return ruleErr(CodeMustBePositive, "price", "price must be positive")
+	}
+	if s.PriceOnRequest && s.Price != nil {
+		return ruleErr(CodePriceOnRequestPrice, "price_on_request", "a price on request cannot have a price")
 	}
 	if s.PriceBeforeDiscount != nil {
 		if *s.PriceBeforeDiscount <= 0 {
@@ -109,6 +116,7 @@ func (s LotState) Equal(o LotState) bool {
 		equalPtr(s.Rooms, o.Rooms) &&
 		equalPtr(s.AreaTotal, o.AreaTotal) &&
 		equalPtr(s.Price, o.Price) &&
+		s.PriceOnRequest == o.PriceOnRequest &&
 		equalPtr(s.PriceBeforeDiscount, o.PriceBeforeDiscount) &&
 		equalPtr(s.Finish, o.Finish)
 }
@@ -193,6 +201,7 @@ type ObservedState struct {
 	Rooms               Field[int]
 	AreaTotal           Field[Area]
 	Price               Field[Money]
+	PriceOnRequest      Field[bool]
 	PriceBeforeDiscount Field[Money]
 	Finish              Field[string]
 }
@@ -212,13 +221,30 @@ func (o ObservedState) Resolve(prev *LotState) (LotState, error) {
 		return LotState{}, ruleErr(CodeInvalidValue, "status", "status cannot be absent; use unknown")
 	}
 	status := o.Status.resolve(nilIfEmpty(base.Status))
+	price := o.Price.resolve(base.Price)
+	onRequest := o.PriceOnRequest.resolve(&base.PriceOnRequest)
+	// A stated price ends "price on request", and "price on request" replaces a
+	// previous price, unless the observation states the other value as well.
+	if o.Price.State == FieldValue && o.PriceOnRequest.State == FieldUnknown {
+		onRequest = nil
+	}
+	if onRequest != nil && *onRequest && o.Price.State == FieldUnknown {
+		price = nil
+	}
+	beforeDiscount := o.PriceBeforeDiscount.resolve(base.PriceBeforeDiscount)
+	// The price before discount belongs to the price: when the price is gone
+	// and the observation does not report the price before discount, it is gone too.
+	if price == nil && o.PriceBeforeDiscount.State == FieldUnknown {
+		beforeDiscount = nil
+	}
 	st := LotState{
 		Presence:            presence,
 		Status:              LotStatusUnknown,
 		Rooms:               o.Rooms.resolve(base.Rooms),
 		AreaTotal:           o.AreaTotal.resolve(base.AreaTotal),
-		Price:               o.Price.resolve(base.Price),
-		PriceBeforeDiscount: o.PriceBeforeDiscount.resolve(base.PriceBeforeDiscount),
+		Price:               price,
+		PriceOnRequest:      onRequest != nil && *onRequest,
+		PriceBeforeDiscount: beforeDiscount,
 		Finish:              normalizeFinish(o.Finish.resolve(base.Finish)),
 	}
 	if status != nil {

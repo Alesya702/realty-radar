@@ -32,7 +32,6 @@ func TestValidatePlacement(t *testing.T) {
 		{"building and section", withSection(withBuilding(base(), building), section), &building, &section, ""},
 		{"missing project", Placement{Type: LotTypeApartment, Number: "1"}, nil, nil, CodeRequired},
 		{"unknown type", Placement{ProjectID: project, Type: "villa", Number: "1"}, nil, nil, CodeInvalidValue},
-		{"number required", Placement{ProjectID: project, Type: LotTypeParking, Number: "  "}, nil, nil, CodeRequired},
 		{"section without building", withSection(base(), section), nil, &section, CodeSectionWithoutBldg},
 		{"building of another project", withBuilding(base(), foreignBuilding), &foreignBuilding, nil, CodePlacementMismatch},
 		{"section of another building", withSection(withBuilding(base(), building), foreignSection), &building, &foreignSection, CodePlacementMismatch},
@@ -57,6 +56,19 @@ func TestNewLotKeepsOptionalLevelsEmpty(t *testing.T) {
 	}
 	if lot.Placement.BuildingID != nil || lot.Placement.SectionID != nil || lot.Placement.Floor != nil {
 		t.Errorf("optional placement levels must stay empty: %+v", lot.Placement)
+	}
+}
+
+func TestValidatePlacementWithoutNumber(t *testing.T) {
+	project := NewID()
+	for _, number := range []string{"", "  "} {
+		got, err := ValidatePlacement(Placement{ProjectID: project, Type: LotTypeParking, Number: number}, nil, nil)
+		if err != nil {
+			t.Fatalf("number %q: a lot without a number must be accepted: %v", number, err)
+		}
+		if got.Number != "" {
+			t.Errorf("number %q normalized to %q, want empty", number, got.Number)
+		}
 	}
 }
 

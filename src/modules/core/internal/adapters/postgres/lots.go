@@ -22,8 +22,9 @@ func scanLot(row pgx.Row, extra ...any) (domain.Lot, error) {
 	var lot domain.Lot
 	var id, project, building, section, primary pgtype.UUID
 	var lotType string
+	var number pgtype.Text
 	var floor pgtype.Int2
-	dest := append([]any{&id, &project, &building, &section, &lotType, &lot.Placement.Number, &floor, &primary, &lot.CreatedAt}, extra...)
+	dest := append([]any{&id, &project, &building, &section, &lotType, &number, &floor, &primary, &lot.CreatedAt}, extra...)
 	if err := row.Scan(dest...); err != nil {
 		return domain.Lot{}, err
 	}
@@ -32,6 +33,7 @@ func scanLot(row pgx.Row, extra ...any) (domain.Lot, error) {
 	lot.Placement.BuildingID = idPtrFrom(building)
 	lot.Placement.SectionID = idPtrFrom(section)
 	lot.Placement.Type = domain.LotType(lotType)
+	lot.Placement.Number = number.String // NULL: no number
 	lot.Placement.Floor = intPtr(floor)
 	lot.PrimaryListingID = idPtrFrom(primary)
 	return lot, nil
@@ -43,7 +45,7 @@ func (s *store) InsertLot(ctx context.Context, lot domain.Lot) error {
 		INSERT INTO core.lots (id, project_id, building_id, section_id, lot_type, number, floor, primary_listing_id, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
 		uuidArg(lot.ID), uuidArg(p.ProjectID), nullUUIDArg(p.BuildingID), nullUUIDArg(p.SectionID),
-		string(p.Type), p.Number, intArg(p.Floor), nullUUIDArg(lot.PrimaryListingID), lot.CreatedAt)
+		string(p.Type), optionalTextArg(p.Number), intArg(p.Floor), nullUUIDArg(lot.PrimaryListingID), lot.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert lot: %w", err)
 	}
@@ -249,7 +251,7 @@ func (s *store) FindBatchByOrigin(ctx context.Context, kind domain.OriginKind, r
 // ---- versions ------------------------------------------------------------------
 
 const versionColumns = `v.id, v.listing_id, v.valid_from, v.valid_to, v.last_observed_at, v.presence, v.status,
-	v.rooms, v.area_total::text, v.price::text, v.price_before_discount::text, v.finish, v.batch_id, v.created_at`
+	v.rooms, v.area_total::text, v.price::text, v.price_on_request, v.price_before_discount::text, v.finish, v.batch_id, v.created_at`
 
 // versionScan receives nullable version columns (a LEFT JOIN may yield no version).
 type versionScan struct {
@@ -258,12 +260,13 @@ type versionScan struct {
 	createdAt                      pgtype.Timestamptz
 	presence, status, finish       pgtype.Text
 	area, price, priceBeforeDiscnt pgtype.Text
+	priceOnRequest                 pgtype.Bool
 	rooms                          pgtype.Int2
 }
 
 func (vs *versionScan) dest() []any {
 	return []any{&vs.id, &vs.listing, &vs.validFrom, &vs.validTo, &vs.lastObs, &vs.presence, &vs.status,
-		&vs.rooms, &vs.area, &vs.price, &vs.priceBeforeDiscnt, &vs.finish, &vs.batch, &vs.createdAt}
+		&vs.rooms, &vs.area, &vs.price, &vs.priceOnRequest, &vs.priceBeforeDiscnt, &vs.finish, &vs.batch, &vs.createdAt}
 }
 
 func (vs *versionScan) version() (*domain.Version, error) {
@@ -279,10 +282,11 @@ func (vs *versionScan) version() (*domain.Version, error) {
 		BatchID:        idFrom(vs.batch),
 		CreatedAt:      vs.createdAt.Time.UTC(),
 		State: domain.LotState{
-			Presence: domain.Presence(vs.presence.String),
-			Status:   domain.LotStatus(vs.status.String),
-			Rooms:    intPtr(vs.rooms),
-			Finish:   textPtr(vs.finish),
+			Presence:       domain.Presence(vs.presence.String),
+			Status:         domain.LotStatus(vs.status.String),
+			Rooms:          intPtr(vs.rooms),
+			PriceOnRequest: vs.priceOnRequest.Bool,
+			Finish:         textPtr(vs.finish),
 		},
 	}
 	var err error
@@ -316,10 +320,10 @@ func (s *store) InsertVersion(ctx context.Context, v domain.Version) error {
 	_, err := s.q.Exec(ctx, `
 		INSERT INTO core.lot_listing_versions
 		    (id, listing_id, valid_from, valid_to, last_observed_at, presence, status, rooms, area_total, price,
-		     price_before_discount, finish, batch_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11::numeric, $12, $13, $14)`,
+		     price_on_request, price_before_discount, finish, batch_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::numeric, $10::numeric, $11, $12::numeric, $13, $14, $15)`,
 		uuidArg(v.ID), uuidArg(v.ListingID), v.ValidFrom, v.ValidTo, v.LastObservedAt, string(st.Presence), string(st.Status),
-		intArg(st.Rooms), areaArg(st.AreaTotal), moneyArg(st.Price), moneyArg(st.PriceBeforeDiscount), textArg(st.Finish),
+		intArg(st.Rooms), areaArg(st.AreaTotal), moneyArg(st.Price), st.PriceOnRequest, moneyArg(st.PriceBeforeDiscount), textArg(st.Finish),
 		uuidArg(v.BatchID), v.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert version: %w", err)
@@ -378,10 +382,18 @@ func (s *store) InsertRelation(ctx context.Context, r domain.ProjectRelation) er
 }
 
 func (s *store) ListRelationsBySubject(ctx context.Context, subjectID domain.ID) ([]domain.ProjectRelation, error) {
+	return s.listRelations(ctx, `subject_project_id = $1`, uuidArg(subjectID))
+}
+
+func (s *store) ListRelationsByRelated(ctx context.Context, relatedID domain.ID) ([]domain.ProjectRelation, error) {
+	return s.listRelations(ctx, `related_project_id = $1`, uuidArg(relatedID))
+}
+
+func (s *store) listRelations(ctx context.Context, where string, args ...any) ([]domain.ProjectRelation, error) {
 	rows, err := s.q.Query(ctx, `
 		SELECT id, subject_project_id, related_project_id, relation_type, COALESCE(rationale, ''), valid_from, valid_to, created_at
-		FROM core.project_relations WHERE subject_project_id = $1
-		ORDER BY valid_from DESC, relation_type, id`, uuidArg(subjectID))
+		FROM core.project_relations WHERE `+where+`
+		ORDER BY valid_from DESC, relation_type, id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list relations: %w", err)
 	}

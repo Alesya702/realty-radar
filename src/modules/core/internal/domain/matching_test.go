@@ -113,6 +113,22 @@ func TestCheckNewLotPlacementKeyK2(t *testing.T) {
 	}
 }
 
+func TestLotsWithoutNumberAreNotMatched(t *testing.T) {
+	project, building := NewID(), NewID()
+	p := Placement{ProjectID: project, BuildingID: &building, Type: LotTypeApartment}
+	noNumber := Lot{ID: NewID(), Placement: p}
+	numbered := Lot{ID: NewID(), Placement: Placement{ProjectID: project, BuildingID: &building, Type: LotTypeApartment, Number: "1"}}
+	if got := MatchPlacement(p, []Lot{noNumber, numbered}); len(got) != 0 {
+		t.Errorf("a placement without a number must have no candidates: %+v", got)
+	}
+	if err := CheckNewLotPlacement(p, []Lot{noNumber}); err != nil {
+		t.Errorf("a second lot without a number in the same building must be accepted: %v", err)
+	}
+	if got := MatchPlacement(numbered.Placement, []Lot{noNumber}); len(got) != 0 {
+		t.Errorf("a lot without a number must not be a candidate: %+v", got)
+	}
+}
+
 func TestMatchPlacementIgnoresOtherProjects(t *testing.T) {
 	project, other := NewID(), NewID()
 	p := Placement{ProjectID: project, Type: LotTypeApartment, Number: "1"}

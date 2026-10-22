@@ -20,6 +20,8 @@ type Store interface {
 
 	InsertProject(ctx context.Context, p domain.Project) error
 	UpdateProjectDeveloper(ctx context.Context, projectID domain.ID, developerID *domain.ID) error
+	// UpdateProject stores the name, city and developer of an existing project.
+	UpdateProject(ctx context.Context, p domain.Project) error
 	GetProject(ctx context.Context, id domain.ID) (domain.Project, error)
 	// LockProject locks the project row for the rest of the transaction.
 	LockProject(ctx context.Context, id domain.ID) error
@@ -68,6 +70,9 @@ type Store interface {
 
 	InsertRelation(ctx context.Context, r domain.ProjectRelation) error
 	ListRelationsBySubject(ctx context.Context, subjectID domain.ID) ([]domain.ProjectRelation, error)
+	// ListRelationsByRelated returns the relations where the project is the
+	// related one (other projects name it as a competitor or reference).
+	ListRelationsByRelated(ctx context.Context, relatedID domain.ID) ([]domain.ProjectRelation, error)
 
 	InsertPortfolioMembership(ctx context.Context, m domain.PortfolioMembership) error
 	ListPortfolioMemberships(ctx context.Context, projectID domain.ID) ([]domain.PortfolioMembership, error)

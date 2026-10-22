@@ -3,7 +3,7 @@
 {{$form := .Data.Form}}
 {{$lot := .Data.History.Lot}}
 <p><a href="/projects/{{$d.Project.ID}}">← {{$d.Project.Name}}</a></p>
-<h1>{{lotType $lot.Placement.Type}} № {{$lot.Placement.Number}}</h1>
+<h1>{{lotType $lot.Placement.Type}} {{if $lot.Placement.Number}}№ {{$lot.Placement.Number}}{{else}}<span class="muted">(номер не указан)</span>{{end}}</h1>
 
 <div class="row">
   <div class="card">
@@ -22,7 +22,7 @@
     <h2>Текущее состояние</h2>
     {{with $d.Current}}
     <dl class="props">
-      <dt>Цена</dt><dd><strong>{{money .State.Price}}</strong></dd>
+      <dt>Цена</dt><dd><strong>{{price .State}}</strong></dd>
       <dt>Цена до скидки</dt><dd>{{money .State.PriceBeforeDiscount}}</dd>
       <dt>Скидка</dt><dd>{{money .State.Discount}}</dd>
       <dt>Цена за м²</dt><dd>{{money .State.PricePerSqm}}</dd>
@@ -47,7 +47,7 @@
   </form>
   {{if $d.At}}
     {{with $d.AtState}}
-    <p>На {{datetimep $d.At}}: цена <strong>{{money .State.Price}}</strong>, цена до скидки {{money .State.PriceBeforeDiscount}},
+    <p>На {{datetimep $d.At}}: цена <strong>{{price .State}}</strong>, цена до скидки {{money .State.PriceBeforeDiscount}},
       площадь {{area .State.AreaTotal}}, комнат {{intp .State.Rooms}}, статус «{{status .State.Status}}», {{presence .State.Presence}}.</p>
     <p class="hint">Версия действовала с {{datetime .ValidFrom}}{{if .ValidTo}} до {{datetimep .ValidTo}}{{end}};
       последнее подтверждение этих значений — {{datetime .LastObservedAt}}.</p>
@@ -74,7 +74,7 @@
         <td>{{datetime .Version.ValidFrom}}</td>
         <td>{{if .Version.ValidTo}}{{datetimep .Version.ValidTo}}{{else}}<span class="badge own">текущая</span>{{end}}</td>
         <td>{{datetime .Version.LastObservedAt}}</td>
-        <td class="num">{{money .Version.State.Price}}{{if index $c "price"}} <span class="badge change">изм.</span>{{end}}</td>
+        <td class="num">{{price .Version.State}}{{if index $c "price"}} <span class="badge change">изм.</span>{{end}}</td>
         <td class="num">{{money .Version.State.PriceBeforeDiscount}}{{if index $c "price_before_discount"}} <span class="badge change">изм.</span>{{end}}</td>
         <td class="num">{{area .Version.State.AreaTotal}}{{if index $c "area_total"}} <span class="badge change">изм.</span>{{end}}</td>
         <td class="num">{{intp .Version.State.Rooms}}{{if index $c "rooms"}} <span class="badge change">изм.</span>{{end}}</td>
@@ -96,6 +96,8 @@
   <form class="grid" method="post" action="/lots/{{$lot.ID}}/observations">
     {{if $cur}}
     <label>Цена, ₽<input name="price" inputmode="decimal" value="{{$form.Value "observation" "price" (inputMoney $cur.State.Price)}}"></label>
+    {{$porDef := ""}}{{if $cur.State.PriceOnRequest}}{{$porDef = "1"}}{{end}}
+    <label style="flex-direction:row;align-items:center;gap:.4rem"><input type="checkbox" name="price_on_request" value="1" {{if $form.Value "observation" "price_on_request" $porDef}}checked{{end}}>Цена по запросу</label>
     <label>Цена до скидки, ₽<input name="price_before_discount" inputmode="decimal" value="{{$form.Value "observation" "price_before_discount" (inputMoney $cur.State.PriceBeforeDiscount)}}"></label>
     <label>Общая площадь, м²<input name="area_total" inputmode="decimal" value="{{$form.Value "observation" "area_total" (inputArea $cur.State.AreaTotal)}}"></label>
     <label>Комнат<input name="rooms" inputmode="numeric" value="{{$form.Value "observation" "rooms" (inputInt $cur.State.Rooms)}}"></label>
@@ -111,6 +113,7 @@
     <label>Отделка<input name="finish" maxlength="200" value="{{$form.Value "observation" "finish" (inputStr $cur.State.Finish)}}"></label>
     {{else}}
     <label>Цена, ₽<input name="price" inputmode="decimal" value="{{$form.Value "observation" "price" ""}}"></label>
+    <label style="flex-direction:row;align-items:center;gap:.4rem"><input type="checkbox" name="price_on_request" value="1" {{if $form.Value "observation" "price_on_request" ""}}checked{{end}}>Цена по запросу</label>
     <label>Цена до скидки, ₽<input name="price_before_discount" inputmode="decimal" value="{{$form.Value "observation" "price_before_discount" ""}}"></label>
     <label>Общая площадь, м²<input name="area_total" inputmode="decimal" value="{{$form.Value "observation" "area_total" ""}}"></label>
     <label>Комнат<input name="rooms" inputmode="numeric" value="{{$form.Value "observation" "rooms" ""}}"></label>

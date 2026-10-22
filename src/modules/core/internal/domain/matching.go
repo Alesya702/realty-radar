@@ -5,7 +5,10 @@ package domain
 // Identity key K2 is (project, building, lot type, number): the section is NOT
 // part of the key, because sources state the section inconsistently. A number
 // without a building is only a possible match: the same number may exist in
-// several buildings of the project.
+// several buildings of the project. A lot without a number has no K2 key: it
+// is never a candidate and never has candidates, so lots without a number are
+// not merged by placement; only the source key (K1) or an explicit choice of
+// the user identifies them.
 //
 // Matching is deterministic: values are compared as they are, never by
 // similarity (no fuzzy matching). The decision to reuse an existing lot is
@@ -36,6 +39,9 @@ type MatchCandidate struct {
 // every lot with the same (project, lot type, number) and get the candidates
 // for that placement. Lots that differ in a known building are not candidates.
 func MatchPlacement(p Placement, lots []Lot) []MatchCandidate {
+	if p.Number == "" {
+		return nil
+	}
 	candidates := make([]MatchCandidate, 0, len(lots))
 	for _, lot := range lots {
 		c := lot.Placement

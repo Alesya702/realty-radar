@@ -34,15 +34,18 @@ func (t LotType) Valid() bool {
 }
 
 // Placement is where a lot is: project (required), building and section
-// (optional), type, number and floor. Placement is not versioned: changing it
-// is a correction, not a market event (core-domain-model.md, 6.1).
+// (optional), type, number (optional) and floor. Placement is not versioned:
+// changing it is a correction, not a market event (core-domain-model.md, 6.1).
 type Placement struct {
 	ProjectID  ID
 	BuildingID *ID
 	SectionID  *ID
 	Type       LotType
-	Number     string
-	Floor      *int
+	// Number is the lot number stated by the source; empty when the source
+	// states none (stored as NULL). A missing number is not an identity: lots
+	// without a number are never matched by placement (see MatchPlacement).
+	Number string
+	Floor  *int
 }
 
 // Lot is the canonical object of sale.
@@ -73,7 +76,7 @@ func ValidatePlacement(p Placement, building *Building, section *Section) (Place
 	if !p.Type.Valid() {
 		return p, ruleErr(CodeInvalidValue, "lot_type", "unknown lot type "+string(p.Type))
 	}
-	number, err := requiredText("number", p.Number, maxNumberLength)
+	number, err := optionalText("number", p.Number, maxNumberLength)
 	if err != nil {
 		return p, err
 	}

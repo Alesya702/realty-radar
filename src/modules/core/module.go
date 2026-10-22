@@ -79,15 +79,17 @@ type (
 	ProjectRelation     = domain.ProjectRelation
 	PortfolioMembership = domain.PortfolioMembership
 
-	CreateProjectInput  = app.CreateProjectInput
-	AddToPortfolioInput = app.AddToPortfolioInput
-	RelationInput       = app.RelationInput
-	ProjectSummary      = app.ProjectSummary
-	BuildingView        = app.BuildingView
-	RelationView        = app.RelationView
-	LotRow              = app.LotRow
-	LotHistory          = app.LotHistory
-	ListingView         = app.ListingView
+	CreateProjectInput   = app.CreateProjectInput
+	UpdateProjectInput   = app.UpdateProjectInput
+	AddToPortfolioInput  = app.AddToPortfolioInput
+	RelationInput        = app.RelationInput
+	ProjectSummary       = app.ProjectSummary
+	BuildingView         = app.BuildingView
+	RelationView         = app.RelationView
+	IncomingRelationView = app.IncomingRelationView
+	LotRow               = app.LotRow
+	LotHistory           = app.LotHistory
+	ListingView          = app.ListingView
 
 	// ObservationBatch is the ingestion contract for confirmed observations
 	// (manual entry now, PDF import next).

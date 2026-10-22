@@ -28,6 +28,11 @@ func TestLotStateValidate(t *testing.T) {
 		{"price before discount equal to price", func(s *LotState) { s.PriceBeforeDiscount = ptr(rub(15_900_000)) }, CodeDiscountNotGreater},
 		{"price before discount lower than price", func(s *LotState) { s.PriceBeforeDiscount = ptr(rub(15_000_000)) }, CodeDiscountNotGreater},
 		{"price before discount without price", func(s *LotState) { s.Price = nil; s.PriceBeforeDiscount = ptr(rub(16_400_000)) }, CodeDiscountWithoutPrice},
+		{"price on request", func(s *LotState) { s.Price, s.PriceOnRequest = nil, true }, ""},
+		{"price on request with a price", func(s *LotState) { s.PriceOnRequest = true }, CodePriceOnRequestPrice},
+		{"price on request with price before discount", func(s *LotState) {
+			s.Price, s.PriceOnRequest, s.PriceBeforeDiscount = nil, true, ptr(rub(16_400_000))
+		}, CodeDiscountWithoutPrice},
 		{"unknown status", func(s *LotState) { s.Status = "hidden" }, CodeInvalidValue},
 		{"unknown presence", func(s *LotState) { s.Presence = "gone" }, CodeInvalidValue},
 	}
@@ -162,6 +167,44 @@ func TestApplyObservationFieldStates(t *testing.T) {
 	}
 	if c.Kind != ChangeChanged || c.Opened.State.PriceBeforeDiscount != nil || *c.Opened.State.Rooms != 2 {
 		t.Fatalf("absent discount: %+v", c.Opened)
+	}
+}
+
+func TestObservedStatePriceOnRequest(t *testing.T) {
+	priced := LotState{Presence: PresenceListed, Status: LotStatusAvailable, Price: ptr(rub(15_900_000)), PriceBeforeDiscount: ptr(rub(16_400_000)), AreaTotal: ptr(Area(6740))}
+	onRequest := LotState{Presence: PresenceListed, Status: LotStatusAvailable, PriceOnRequest: true, AreaTotal: ptr(Area(6740))}
+	tests := []struct {
+		name          string
+		prev          *LotState
+		obs           ObservedState
+		wantPrice     *Money
+		wantOnRequest bool
+		wantDiscount  *Money
+		wantCode      string
+	}{
+		{"first lot without price", nil, ObservedState{}, nil, false, nil, ""},
+		{"first lot with price on request", nil, ObservedState{PriceOnRequest: Value(true)}, nil, true, nil, ""},
+		{"price on request replaces the price and its price before discount", &priced, ObservedState{PriceOnRequest: Value(true)}, nil, true, nil, ""},
+		{"a stated price ends price on request", &onRequest, ObservedState{Price: Value(rub(30_000_000))}, ptr(rub(30_000_000)), false, nil, ""},
+		{"unknown fields keep price on request", &onRequest, ObservedState{Rooms: Value(3)}, nil, true, nil, ""},
+		{"absent price drops the unreported price before discount", &priced, ObservedState{Price: Absent[Money]()}, nil, false, nil, ""},
+		{"price and price on request together", nil, ObservedState{Price: Value(rub(1)), PriceOnRequest: Value(true)}, nil, false, nil, CodePriceOnRequestPrice},
+		{"price before discount without price", &onRequest, ObservedState{PriceBeforeDiscount: Value(rub(10))}, nil, false, nil, CodeDiscountWithoutPrice},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.obs.Resolve(tt.prev)
+			assertRuleCode(t, err, tt.wantCode)
+			if err != nil {
+				return
+			}
+			if !equalPtr(got.Price, tt.wantPrice) || got.PriceOnRequest != tt.wantOnRequest || !equalPtr(got.PriceBeforeDiscount, tt.wantDiscount) {
+				t.Errorf("state = price %v, on request %v, before discount %v", got.Price, got.PriceOnRequest, got.PriceBeforeDiscount)
+			}
+			if got.Price == nil && got.PricePerSqm() != nil {
+				t.Error("price per m² must not be calculated without a price")
+			}
+		})
 	}
 }
 
